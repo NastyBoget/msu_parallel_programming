@@ -71,15 +71,23 @@ int main(int argc, char **argv)
     }
     MPI_Barrier(comm);
     // шаг 3
-    if (coords[0] == 1 && (coords[1] == 0 || coords[1] == 2)) {
+    if (coords[0] == 1 && (coords[1] == 0 || coords[1] == 3)) {
         other_coords[0] = coords[0];
-        other_coords[1] = coords[1] + 1;
+        if (coords[1] == 0) {
+            other_coords[1] = coords[1] + 1;
+        } else {
+            other_coords[1] = coords[1] - 1;
+        }
         MPI_Cart_rank(comm, other_coords, &other_rank);
         MPI_Send(&a, 1, MPI_INT, other_rank, 0, comm);
     }
-    if (coords[0] == 1 && (coords[1] == 1 || coords[1] == 3)) {
+    if (coords[0] == 1 && (coords[1] == 1 || coords[1] == 2)) {
         other_coords[0] = coords[0];
-        other_coords[1] = coords[1] - 1;
+        if (coords[1] == 1) {
+            other_coords[1] = coords[1] - 1;
+        } else {
+            other_coords[1] = coords[1] + 1;
+        }
         MPI_Cart_rank(comm, other_coords, &other_rank);
         MPI_Recv(&result, 1, MPI_INT, other_rank, 0, comm, &status);
         if (result > a) {

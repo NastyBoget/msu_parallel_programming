@@ -28,6 +28,8 @@
 1) Первое задание 
 
 ```
+export OMPI_MCA_btl=self,tcp
+
 make task1
 ```
 
