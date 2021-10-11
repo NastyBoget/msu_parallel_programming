@@ -28,15 +28,18 @@ void compare_exchange(pair<size_t, int> &firstElem, pair<size_t, int> &secondEle
     nComp++;
 }
 
-vector<pair<size_t, int> > sortTwoArrays(vector<pair<size_t, int> > &firstVector, vector<pair<size_t, int> > &secondVector)
+vector<pair<size_t, int> > sortTwoArrays(vector<pair<size_t, int> > &firstVector,
+                                         vector<pair<size_t, int> > &secondVector, int &localTacts)
 {
     auto firstSize = firstVector.size();
     auto secondSize = secondVector.size();
 
     if (firstSize == 0) return secondVector;
+
     if (secondSize == 0) return firstVector;
 
     if (firstSize == 1 and secondSize == 1) {
+        localTacts = 1;
         compare_exchange(firstVector[0], secondVector[0]);
         firstVector.insert(firstVector.end(), secondVector.begin(), secondVector.end());
         return firstVector;
@@ -51,8 +54,8 @@ vector<pair<size_t, int> > sortTwoArrays(vector<pair<size_t, int> > &firstVector
         newSecondVector.push_back(secondVector[i]);
     }
 
-    nTact++;
-    auto firstPart = sortTwoArrays(newFirstVector, newSecondVector);
+    int firstPartTacts = 0;
+    auto firstPart = sortTwoArrays(newFirstVector, newSecondVector, firstPartTacts);
 
     newFirstVector.clear();
     newSecondVector.clear();
@@ -62,9 +65,11 @@ vector<pair<size_t, int> > sortTwoArrays(vector<pair<size_t, int> > &firstVector
     for(size_t i = 1; i < secondSize; i += 2) {
         newSecondVector.push_back(secondVector[i]);
     }
-    auto secondPart = sortTwoArrays(newFirstVector, newSecondVector);
+    int secondPartTacts = 0;
+    auto secondPart = sortTwoArrays(newFirstVector, newSecondVector, secondPartTacts);
 
-    nTact++;
+    localTacts += std::max(firstPartTacts, secondPartTacts);
+    localTacts++;
     for(size_t i = 0; i < std::min(firstPart.size() - 1, secondPart.size()); i++) {
         compare_exchange(secondPart[i], firstPart[i + 1]);
     }
@@ -93,7 +98,7 @@ void bsort(vector<pair<size_t, int> > &arr)
     // sort each part
     bsort(firstArray);
     bsort(secondArray);
-    arr = sortTwoArrays(firstArray, secondArray);
+    arr = sortTwoArrays(firstArray, secondArray, nTact);
 }
 
 int main(int argc, char **argv)

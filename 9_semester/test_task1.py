@@ -11,6 +11,7 @@ if __name__ == "__main__":
         output = subprocess.run(["./bsort", arr_size], capture_output=True, text=True)
         output = output.stdout.split('\n')
         n_comp, n_tact = output[-3], output[-2]
-        assert(int(n_comp) <= test_data[arr_size][0])
+        assert(int(n_comp) == test_data[arr_size][0])
+        assert(int(n_tact) == test_data[arr_size][1])
         print(f"test passed for {arr_size} elements")
     os.remove("bsort")
