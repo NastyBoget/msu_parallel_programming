@@ -1,18 +1,17 @@
 #include <iostream>
 #include <cstdlib>
-#include <vector>
+#include <cmath>
 
 using std::cout;
-using std::vector;
 using std::pair;
 
 int nComp = 0;
 int nTact = 0;
 
-void printArray(vector<pair<size_t, int> > &arr)
+void printArray(pair<size_t, int> *arr, size_t arrSize)
 {
-    for (auto &it : arr) {
-        cout << it.second << " ";
+    for (size_t i = 0; i < arrSize; i++) {
+        cout << arr[i].second << " ";
     }
     cout << std::endl;
 }
@@ -28,88 +27,85 @@ void compare_exchange(pair<size_t, int> &firstElem, pair<size_t, int> &secondEle
     nComp++;
 }
 
-vector<pair<size_t, int> > sortTwoArrays(vector<pair<size_t, int> > &firstVector,
-                                         vector<pair<size_t, int> > &secondVector, int &localTacts)
+void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize, int &localTacts)
 {
-    auto firstSize = firstVector.size();
-    auto secondSize = secondVector.size();
-
-    if (firstSize == 0) return secondVector;
-
-    if (secondSize == 0) return firstVector;
+    if (firstSize == 0 or secondSize == 0) return;
 
     if (firstSize == 1 and secondSize == 1) {
         localTacts = 1;
-        compare_exchange(firstVector[0], secondVector[0]);
-        firstVector.insert(firstVector.end(), secondVector.begin(), secondVector.end());
-        return firstVector;
+        compare_exchange(array[0], array[1]);
+        return;
     }
 
-    vector<pair<size_t, int> > newFirstVector;
-    vector<pair<size_t, int> > newSecondVector;
-    for(size_t i = 0; i < firstSize; i += 2) {
-        newFirstVector.push_back(firstVector[i]);
+    // make two arrays with even elements
+    size_t evenFirstSize1 = round((float)firstSize / 2);
+    size_t evenSecondSize1 = round((float)secondSize / 2);
+    auto evenArray = new pair<size_t, int>[evenFirstSize1 + evenSecondSize1];
+    for(size_t i = 0; i < evenFirstSize1; i++) {
+        evenArray[i] = array[2 * i];
     }
-    for(size_t i = 0; i < secondSize; i += 2) {
-        newSecondVector.push_back(secondVector[i]);
+    for(size_t i = 0; i < evenSecondSize1; i++) {
+        evenArray[evenFirstSize1 + i] = array[firstSize + 2 * i];
     }
-
     int firstPartTacts = 0;
-    auto firstPart = sortTwoArrays(newFirstVector, newSecondVector, firstPartTacts);
+    sortTwoArrays(evenArray, evenFirstSize1, evenSecondSize1, firstPartTacts);
 
-    newFirstVector.clear();
-    newSecondVector.clear();
-    for(size_t i = 1; i < firstSize; i += 2) {
-        newFirstVector.push_back(firstVector[i]);
+    // make two arrays with odd elements
+    size_t oddFirstSize2 = firstSize - evenFirstSize1;
+    size_t oddSecondSize2 = secondSize - evenSecondSize1;
+    auto oddArray = new pair<size_t, int>[oddFirstSize2 + oddSecondSize2];
+    for(size_t i = 0; i < oddFirstSize2; i++) {
+        oddArray[i] = array[2 * i + 1];
     }
-    for(size_t i = 1; i < secondSize; i += 2) {
-        newSecondVector.push_back(secondVector[i]);
+    for(size_t i = 0; i < oddSecondSize2; i++) {
+        oddArray[oddFirstSize2 + i] = array[firstSize + 2 * i + 1];
     }
     int secondPartTacts = 0;
-    auto secondPart = sortTwoArrays(newFirstVector, newSecondVector, secondPartTacts);
+    sortTwoArrays(oddArray, oddFirstSize2, oddSecondSize2, secondPartTacts);
 
     localTacts += std::max(firstPartTacts, secondPartTacts);
-    localTacts++;
-    for(size_t i = 0; i < std::min(firstPart.size() - 1, secondPart.size()); i++) {
-        compare_exchange(secondPart[i], firstPart[i + 1]);
-    }
 
-    int i = 1;
-    for(auto &it : secondPart) {
-        vector<pair<size_t, int> >::const_iterator first = firstPart.begin() + i;
-        firstPart.insert(first, it);
-        i += 2;
+    // move sorted odd and even parts to array
+    for(size_t i = 0; i < evenFirstSize1; i++) {
+        array[2 * i] = evenArray[i];
     }
-    return firstPart;
+    for(size_t i = 0; i < evenSecondSize1; i++) {
+        array[firstSize + 2 * i] = evenArray[evenFirstSize1 + i];
+    }
+    for(size_t i = 0; i < oddFirstSize2; i++) {
+        array[2 * i + 1] = oddArray[i];
+    }
+    for(size_t i = 0; i < oddSecondSize2; i++) {
+        array[firstSize + 2 * i + 1] = oddArray[oddFirstSize2 + i];
+    }
+    delete[] evenArray;
+    delete[] oddArray;
+
+    localTacts++;
+    for(size_t i = 1; i < firstSize + secondSize - 1; i += 2) {
+        compare_exchange(array[i], array[i + 1]);
+    }
 }
 
-void bsort(vector<pair<size_t, int> > &arr)
+void bsort(pair<size_t, int> *arr, size_t arrSize)
 {
     // there recursion ends
-    auto arrSize = arr.size();
     if (arrSize < 2) return;
-
-    // make two parts
-    vector<pair<size_t, int> >::const_iterator first = arr.begin();
-    vector<pair<size_t, int> >::const_iterator middle = arr.begin() + (arrSize / 2);
-    vector<pair<size_t, int> >::const_iterator last = arr.end();
-    vector<pair<size_t, int> > firstArray(first, middle);
-    vector<pair<size_t, int> > secondArray(middle, last);
     // sort each part
-    bsort(firstArray);
-    bsort(secondArray);
-    arr = sortTwoArrays(firstArray, secondArray, nTact);
+    bsort(arr, arrSize / 2);
+    bsort(arr + arrSize / 2, arrSize - arrSize / 2);
+    sortTwoArrays(arr, arrSize / 2, arrSize - arrSize / 2, nTact);
 }
 
 int main(int argc, char **argv)
 {
     size_t arrSize = atoi(argv[1]);
     cout << arrSize << " " << "0 0" << std::endl;
-    vector<pair<size_t, int> > arr(arrSize);
+    auto arr = new pair<size_t, int>[arrSize];
     for (size_t i = 0; i < arrSize; i++)
         arr[i] = std::make_pair(i, rand() % arrSize);
-
-    bsort(arr);
+    bsort(arr, arrSize);
+    delete[] arr;
     cout << nComp << std::endl;
     cout << nTact << std::endl;
     return 0;
