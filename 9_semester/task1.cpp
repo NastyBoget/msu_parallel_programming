@@ -100,11 +100,12 @@ void bsort(pair<size_t, int> *arr, size_t arrSize)
 int main(int argc, char **argv)
 {
     size_t arrSize = atoi(argv[1]);
-    cout << arrSize << " " << "0 0" << std::endl;
+    cout << arrSize << " 0 0" << std::endl;
     auto arr = new pair<size_t, int>[arrSize];
     for (size_t i = 0; i < arrSize; i++)
         arr[i] = std::make_pair(i, rand() % arrSize);
     bsort(arr, arrSize);
+//    printArray(arr, arrSize);
     delete[] arr;
     cout << nComp << std::endl;
     cout << nTact << std::endl;
