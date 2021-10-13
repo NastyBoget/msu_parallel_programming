@@ -1,12 +1,50 @@
 #include <iostream>
 #include <cstdlib>
 #include <cmath>
+#include <vector>
+#include <set>
 
 using std::cout;
 using std::pair;
+using std::vector;
+using std::set;
 
 int nComp = 0;
-int nTact = 0;
+vector<set<size_t> > comparedElements;
+
+
+set<size_t> makeSet(size_t elem1, size_t elem2) {
+    set<size_t> s;
+    s.insert(elem1);
+    s.insert(elem2);
+    return s;
+}
+
+void addComparedElements(size_t elem1, size_t elem2)
+{
+    if (comparedElements.empty()) {
+        comparedElements.push_back(makeSet(elem1, elem2));
+        return;
+    }
+    auto vecSize = comparedElements.size();
+    for(int i = vecSize - 1 ;i >= 0; i--) {
+        // if found in previous comparisons
+        if (comparedElements[i].find(elem1) != comparedElements[i].end() or
+            comparedElements[i].find(elem2) != comparedElements[i].end()) {
+            if (i < vecSize - 1) {
+                comparedElements[i + 1].insert(elem1);
+                comparedElements[i + 1].insert(elem2);
+            }
+            else {
+                comparedElements.push_back(makeSet(elem1, elem2));
+            }
+            return;
+        }
+    }
+    comparedElements[0].insert(elem1);
+    comparedElements[0].insert(elem2);
+}
+
 
 void printArray(pair<size_t, int> *arr, size_t arrSize)
 {
@@ -25,14 +63,14 @@ void compare_exchange(pair<size_t, int> &firstElem, pair<size_t, int> &secondEle
         secondElem.second = tmp;
     }
     nComp++;
+    addComparedElements(firstElem.first, secondElem.first);
 }
 
-void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize, int &localTacts)
+void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize)
 {
     if (firstSize == 0 or secondSize == 0) return;
 
     if (firstSize == 1 and secondSize == 1) {
-        localTacts = 1;
         compare_exchange(array[0], array[1]);
         return;
     }
@@ -47,8 +85,7 @@ void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize
     for(size_t i = 0; i < evenSecondSize1; i++) {
         evenArray[evenFirstSize1 + i] = array[firstSize + 2 * i];
     }
-    int firstPartTacts = 0;
-    sortTwoArrays(evenArray, evenFirstSize1, evenSecondSize1, firstPartTacts);
+    sortTwoArrays(evenArray, evenFirstSize1, evenSecondSize1);
 
     // make two arrays with odd elements
     size_t oddFirstSize2 = firstSize - evenFirstSize1;
@@ -60,10 +97,7 @@ void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize
     for(size_t i = 0; i < oddSecondSize2; i++) {
         oddArray[oddFirstSize2 + i] = array[firstSize + 2 * i + 1];
     }
-    int secondPartTacts = 0;
-    sortTwoArrays(oddArray, oddFirstSize2, oddSecondSize2, secondPartTacts);
-
-    localTacts += std::max(firstPartTacts, secondPartTacts);
+    sortTwoArrays(oddArray, oddFirstSize2, oddSecondSize2);
 
     // move sorted odd and even parts to array
     for(size_t i = 0; i < evenFirstSize1; i++) {
@@ -81,7 +115,6 @@ void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize
     delete[] evenArray;
     delete[] oddArray;
 
-    localTacts++;
     for(size_t i = 1; i < firstSize + secondSize - 1; i += 2) {
         compare_exchange(array[i], array[i + 1]);
     }
@@ -94,7 +127,7 @@ void bsort(pair<size_t, int> *arr, size_t arrSize)
     // sort each part
     bsort(arr, arrSize / 2);
     bsort(arr + arrSize / 2, arrSize - arrSize / 2);
-    sortTwoArrays(arr, arrSize / 2, arrSize - arrSize / 2, nTact);
+    sortTwoArrays(arr, arrSize / 2, arrSize - arrSize / 2);
 }
 
 int main(int argc, char **argv)
@@ -105,9 +138,8 @@ int main(int argc, char **argv)
     for (size_t i = 0; i < arrSize; i++)
         arr[i] = std::make_pair(i, rand() % arrSize);
     bsort(arr, arrSize);
-//    printArray(arr, arrSize);
     delete[] arr;
     cout << nComp << std::endl;
-    cout << nTact << std::endl;
+    cout << comparedElements.size() << std::endl;
     return 0;
 }
