@@ -45,18 +45,11 @@ void addComparedElements(size_t elem1, size_t elem2)
     comparedElements[0].insert(elem2);
 }
 
-
-void printArray(pair<size_t, int> *arr, size_t arrSize)
+void compare_exchange(pair<size_t, int> &firstElem, pair<size_t, int> &secondElem, bool printComp)
 {
-    for (size_t i = 0; i < arrSize; i++) {
-        cout << arr[i].second << " ";
+    if (printComp) {
+        cout << firstElem.first << " " << secondElem.first << std::endl;
     }
-    cout << std::endl;
-}
-
-void compare_exchange(pair<size_t, int> &firstElem, pair<size_t, int> &secondElem)
-{
-    cout << firstElem.first << " " << secondElem.first << std::endl;
     if (firstElem.second > secondElem.second) {
         int tmp = firstElem.second;
         firstElem.second = secondElem.second;
@@ -66,12 +59,12 @@ void compare_exchange(pair<size_t, int> &firstElem, pair<size_t, int> &secondEle
     addComparedElements(firstElem.first, secondElem.first);
 }
 
-void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize)
+void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize, bool printComp)
 {
     if (firstSize == 0 or secondSize == 0) return;
 
     if (firstSize == 1 and secondSize == 1) {
-        compare_exchange(array[0], array[1]);
+        compare_exchange(array[0], array[1], printComp);
         return;
     }
 
@@ -85,7 +78,7 @@ void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize
     for(size_t i = 0; i < evenSecondSize1; i++) {
         evenArray[evenFirstSize1 + i] = array[firstSize + 2 * i];
     }
-    sortTwoArrays(evenArray, evenFirstSize1, evenSecondSize1);
+    sortTwoArrays(evenArray, evenFirstSize1, evenSecondSize1, printComp);
 
     // make two arrays with odd elements
     size_t oddFirstSize2 = firstSize - evenFirstSize1;
@@ -97,7 +90,7 @@ void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize
     for(size_t i = 0; i < oddSecondSize2; i++) {
         oddArray[oddFirstSize2 + i] = array[firstSize + 2 * i + 1];
     }
-    sortTwoArrays(oddArray, oddFirstSize2, oddSecondSize2);
+    sortTwoArrays(oddArray, oddFirstSize2, oddSecondSize2, printComp);
 
     // move sorted odd and even parts to array
     for(size_t i = 0; i < evenFirstSize1; i++) {
@@ -116,18 +109,38 @@ void sortTwoArrays(pair<size_t, int> *array, size_t firstSize, size_t secondSize
     delete[] oddArray;
 
     for(size_t i = 1; i < firstSize + secondSize - 1; i += 2) {
-        compare_exchange(array[i], array[i + 1]);
+        compare_exchange(array[i], array[i + 1], printComp);
     }
 }
 
-void bsort(pair<size_t, int> *arr, size_t arrSize)
+void bsort(pair<size_t, int> *arr, size_t arrSize, bool printComp = true)
 {
     // there recursion ends
     if (arrSize < 2) return;
     // sort each part
-    bsort(arr, arrSize / 2);
-    bsort(arr + arrSize / 2, arrSize - arrSize / 2);
-    sortTwoArrays(arr, arrSize / 2, arrSize - arrSize / 2);
+    bsort(arr, arrSize / 2, printComp);
+    bsort(arr + arrSize / 2, arrSize - arrSize / 2, printComp);
+    sortTwoArrays(arr, arrSize / 2, arrSize - arrSize / 2, printComp);
+}
+
+bool testBsort() {
+    for (size_t arrSize = 1; arrSize <= 24; arrSize++) {
+        auto arr = new pair<size_t, int>[arrSize];
+        auto arrNumber = pow(2, arrSize);
+        for (size_t i = 0; i < arrNumber; i++) {
+            auto curNumber = i;
+            for (size_t j = 0; j < arrSize; j++) {
+                arr[j] = std::make_pair(j, curNumber % 2);
+                curNumber /= 2;
+            }
+            bsort(arr, arrSize, false);
+            for (size_t j = 0; j < arrSize - 1; j++) {
+                if (arr[j + 1] < arr[j]) return false;
+            }
+        }
+        delete[] arr;
+    }
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -141,5 +154,6 @@ int main(int argc, char **argv)
     delete[] arr;
     cout << nComp << std::endl;
     cout << comparedElements.size() << std::endl;
+    // assert(testBsort());
     return 0;
 }
