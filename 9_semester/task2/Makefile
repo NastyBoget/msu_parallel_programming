@@ -8,7 +8,7 @@ all: $(SRC)
 	$(CXX) $(SRC) -o $(OUT) $(CXX_FLAGS)
 
 run: $(OUT)
-	mpirun -n 4 ./$(OUT) 1000000
+	mpirun -n 4 ./$(OUT) 32 32
 
 clean:
 	rm -rf $(OUT)
