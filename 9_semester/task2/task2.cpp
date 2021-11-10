@@ -8,8 +8,8 @@
 using namespace std;
 
 int procSize, procRank;
-double serialTime, parTime;
-bool verbose = true;
+double serialTime, parallelTime;
+bool verbose = false;
 int coordSorted = 0;
 MPI_Datatype messageType;
 
@@ -43,7 +43,7 @@ void print(const Point* pointsArray, size_t arraySize, const string& msg) {
 	if (!verbose)
 		return;
 	cout << msg << endl;
-    for(size_t i = 0; i < arraySize - 1; i++) {
+    for(size_t i = 0; i < arraySize; i++) {
 		cout << pointsArray[i].coord[coordSorted] << " ";
 	}
 	cout << endl;
@@ -215,8 +215,8 @@ void runSort(Point* pointsArray, int arraySize) {
 
 Point* resize(Point* array, int oldSize, int newSize) {
     auto result = new Point[newSize];
-    for(int i = 0; i <= newSize; i++) {
-        if (i < oldSize) {
+    for(int i = 0; i < newSize; i++) {
+        if (i < min(oldSize, newSize)) {
             result[i] = array[i];
         } else {
             result[i] = Point({numeric_limits<float>::max(), numeric_limits<float>::max(), i});
@@ -226,17 +226,17 @@ Point* resize(Point* array, int oldSize, int newSize) {
     return result;
 }
 
-void runSortParallel(int n1, int n2) {
-    int partArraySize=0;
+void runSortParallel(Point* pointsArray, int n1, int n2) {
+    int partArraySize = 0;
     for(; partArraySize * procSize < n1 * n2; partArraySize++) {}
 
     auto readArray = new Point[partArraySize];
-    Point* pointsArray;
 	double startTime = 0.0, endTime;
 	if (procRank == 0) {
-        pointsArray = generatePoints(n1, n2);
 		startTime = MPI_Wtime();
-		pointsArray = resize(pointsArray, n1 * n2, procSize * partArraySize);
+		if (n1 * n2 != procSize * partArraySize) {
+            pointsArray = resize(pointsArray, n1 * n2, procSize * partArraySize);
+		}
 		print(pointsArray, n1 * n2, "Before sorting: ");
 	}
 	MPI_Barrier(MPI_COMM_WORLD);
@@ -246,17 +246,26 @@ void runSortParallel(int n1, int n2) {
     bSort(readArray, partArraySize);
     bSortParallel(readArray, partArraySize);
 	
-	MPI_Gather(pointsArray, partArraySize, messageType, readArray, partArraySize, messageType, 0, MPI_COMM_WORLD);
+	MPI_Gather(readArray, partArraySize, messageType, pointsArray, partArraySize, messageType, 0, MPI_COMM_WORLD);
+    delete[] readArray;
 	if (procRank == 0) {
-        pointsArray = resize(pointsArray, procSize * partArraySize, n1 * n2);
+        if (n1 * n2 != procSize * partArraySize) {
+            pointsArray = resize(pointsArray, procSize * partArraySize, n1 * n2);
+        }
 		endTime = MPI_Wtime();
 		print(pointsArray, n1 * n2, "Parallel: after sorting: ");
-		parTime = endTime - startTime;
-		cout << "Parallel time = " << parTime << endl;
-		delete[] pointsArray;
+		parallelTime = endTime - startTime;
+		cout << "Parallel time = " << parallelTime << endl;
 	}
 }
 
+Point* copyArray(const Point* pointsArray, int arraySize) {
+    auto copyPointsArray = new Point[arraySize];
+    for (int i = 0; i < arraySize; i++) {
+        copyPointsArray[i] = pointsArray[i];
+    }
+    return copyPointsArray;
+}
 
 int main(int argc, char* argv[]) {
 	MPI_Init(&argc, &argv);
@@ -265,15 +274,27 @@ int main(int argc, char* argv[]) {
 
 	int n1 = atoi(argv[1]);
     int n2 = atoi(argv[2]);
+    Point* pointsArray = nullptr;
+    Point* copyPointsArray = nullptr;
+    if (procRank == 0) {
+        pointsArray = generatePoints(n1, n2);
+    }
 
 	if (procSize == 1) {
-		auto pointsArray = generatePoints(n1, n2);
-		runSort(pointsArray, n1 * n2);
-		delete[] pointsArray;
+	    runSort(pointsArray, n1 * n2);
+	    delete[] pointsArray;
 	} else {
-		runSortParallel(n1, n2);
+	    if (procRank == 0) {
+            copyPointsArray = copyArray(pointsArray, n1 * n2);
+	    }
+
+		runSortParallel(pointsArray, n1, n2);
         if (procRank == 0) {
-            double effectiveness = serialTime / parTime / procSize;
+            print(copyPointsArray, n1 * n2, "Before sorting: ");
+            runSort(copyPointsArray, n1 * n2);
+            delete[] pointsArray;
+            delete[] copyPointsArray;
+            double effectiveness = serialTime / parallelTime / procSize;
             cout << "Effectiveness: " << effectiveness << endl;
         }
 	}
