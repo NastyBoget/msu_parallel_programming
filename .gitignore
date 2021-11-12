@@ -2,3 +2,4 @@
 *.idea
 *.out
 *cmake-build-debug*
+*venv*

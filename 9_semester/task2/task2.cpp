@@ -1,6 +1,5 @@
 #include <iostream>
 #include <limits>
-#include <random>
 #include <vector>
 #include <functional>
 #include <cmath>
@@ -9,7 +8,6 @@
 using namespace std;
 
 int procSize, procRank;
-double serialTime, parallelTime;
 bool verbose = false;
 int coordSorted = 0;
 MPI_Datatype messageType;
@@ -20,37 +18,49 @@ struct Point {
 };
 
 float x(int i, int j) {
-    static std::default_random_engine e;
-    static std::uniform_real_distribution<> dis(-1000, 1000);
-    return dis(e);
+    return (sin(i) + cos(j)) * (i + j);
 }
 
 float y(int i, int j) {
-    return x(i, j);
+    return (cos(i) + sin(j)) * (i + j);
 }
 
 bool comp(Point i, Point j) {
     return i.coord[coordSorted] < j.coord[coordSorted];
 }
 
-vector<Point> generatePoints(int n1, int n2) {
+vector<Point> generatePoints(int n1, int n2, int startIndex, int arraySize) {
     vector<Point> result;
-    result.reserve(n1 * n2);
-    for(int i = 0; i < n1; i++)
-        for(int j = 0; j < n2; j++) {
-            result.emplace_back(Point({x(i, j), y(i, j), i * n2 + j}));
-        }
+    result.reserve(arraySize);
+    for(int index = startIndex; index < startIndex + arraySize; index++) {
+        Point newPoint;
+        int i = index / n2;
+        int j = index % n2;
+        newPoint.coord[0] = x(i, j);
+        newPoint.coord[1] = y(i, j);
+        newPoint.index = index;
+        result.push_back(newPoint);
+    }
     return result;
 }
 
 void print(const vector<Point>& pointsArray, const string& msg) {
 	if (!verbose)
 		return;
-	cout << msg << endl;
-    for(auto& i : pointsArray) {
-		cout << i.coord[coordSorted] << " ";
-	}
-	cout << endl;
+    int rank = 0;
+    while (rank < procSize) {
+        if (procRank == rank) {
+            cout << "Processor #" << procRank << ". " << msg << endl;
+            for(int i = 0; i < pointsArray.size(); i++) {
+                cout << pointsArray[i].coord[coordSorted] << " ";
+            }
+            cout << endl;
+            fflush(stdout);
+        }
+        rank ++;
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+    cout << endl;
 }
 
 bool checkCorrectness(const vector<Point>& pointsArray) {
@@ -68,7 +78,7 @@ inline void compareExchange(vector<Point>& pointsArray, int i, int j) {
     }
 }
 
-void buildDerivedType(const vector<Point>& indata, MPI_Datatype* message_type_ptr)
+void buildDerivedType(vector<Point>& indata, MPI_Datatype* message_type_ptr)
 {
     int block_lengths[2];
     MPI_Aint displacements[2];
@@ -93,11 +103,11 @@ void buildDerivedType(const vector<Point>& indata, MPI_Datatype* message_type_pt
 }
 
 void oddEvenMergeSort(vector<Point>& left, const vector<Point>& right, int proc1, int proc2) {
-    auto arraySize = left.size();
-    auto tmpSize = 2 * arraySize;
+    int arraySize = left.size();
+    int tmpSize = 2 * arraySize;
     vector<Point> tmpArray(tmpSize);
-	
-	for(size_t idx = 0; idx < 2; idx += 1) {
+
+    for(size_t idx = 0; idx < 2; idx++) {
 		for(size_t i = idx, l = idx, r = idx; i < tmpSize; i += 2) {
 			if (l < arraySize and (r >= arraySize or left[l].coord[coordSorted] <= right[r].coord[coordSorted])) {
 				tmpArray[i] = left[l];
@@ -115,7 +125,7 @@ void oddEvenMergeSort(vector<Point>& left, const vector<Point>& right, int proc1
             tmpArray[tmpSize - 1] = right[arraySize - 1];
 	    }
 	}
-	
+
 	for(int i = 1; i < tmpSize - 1; i += 2) {
 		compareExchange(tmpArray, i, i + 1);
 	}
@@ -127,7 +137,7 @@ void oddEvenMergeSort(vector<Point>& left, const vector<Point>& right, int proc1
 }
 
 void compareExchangeParallel(vector<Point>& currentArray, int proc1, int proc2) {
-    auto arraySize = currentArray.size();
+    int arraySize = currentArray.size();
 	int otherProc;
 	MPI_Request request;
 	MPI_Status status;
@@ -150,15 +160,15 @@ void bSortParallel(vector<Point>& pointsArrayPart) {
     int N = procSize;
     int t = int(log2(N));
     int q, r, d;
-    auto const_q = pow(2, t);
-    for (int p = pow(2, t); p > 0; p >>= 1) {
+    int const_q = pow((float) 2, t);
+    for (int p = const_q; p > 0; p >>= 1) {
         r = 0;
         d = p;
         q = const_q;
         bool check;
         do {
         	check = false;
-            for (int i = 0; i < N - d; i += 1) {
+            for (int i = 0; i < N - d; i++) {
             	if ((i & p) == r and (procRank == i or procRank == i + d)) {
                     compareExchangeParallel(pointsArrayPart, i, i + d);
 				}
@@ -181,40 +191,35 @@ void runSort(vector<Point>& pointsArray) {
 		cout << "Serial: incorrect results" << endl;
 	} 	
 	print(pointsArray, "Serial: array after sorting: ");
-	serialTime = endTime - startTime;
-	cout << "Serial time = " << serialTime << endl;
+	cout << "Serial time = " << endTime - startTime << endl;
 }
 
-void runSortParallel(vector<Point> pointsArray, int arraySize) {
+void runSortParallel(int n1, int n2) {
     int partArraySize = 0;
-    for(; partArraySize * procSize < arraySize; partArraySize++) {}
+    for(; partArraySize * procSize < n1 * n2; partArraySize++) {}
 
-    vector<Point> readArray;
+    vector<Point> partArray = generatePoints(n1, n2, procRank * partArraySize, partArraySize);
+    print(partArray, "Before sorting: ");
+    buildDerivedType(partArray, &messageType);
 	double startTime = 0.0, endTime;
-	if (procRank == 0) {
-		startTime = MPI_Wtime();
-        pointsArray.resize(procSize * partArraySize,
-                Point({numeric_limits<float>::max(), numeric_limits<float>::max(), procSize * partArraySize}));
-		print(pointsArray, "Before sorting: ");
-	}
-    buildDerivedType(readArray, &messageType);
-	MPI_Barrier(MPI_COMM_WORLD);
-    readArray.resize(partArraySize);
-	MPI_Scatter(pointsArray.data(), partArraySize, messageType, readArray.data(),
-	        partArraySize, messageType, 0, MPI_COMM_WORLD);
 
-    sort(readArray.begin(), readArray.end(), comp);
-    bSortParallel(readArray);
-	
-	MPI_Gather(readArray.data(), partArraySize, messageType, pointsArray.data(),
-	        partArraySize, messageType, 0, MPI_COMM_WORLD);
+	MPI_Barrier(MPI_COMM_WORLD);
+    if (procRank == 0) {
+        startTime = MPI_Wtime();
+    }
+
+    sort(partArray.begin(), partArray.end(), comp);
+    bSortParallel(partArray);
+
+    MPI_Barrier(MPI_COMM_WORLD);
 	if (procRank == 0) {
-        pointsArray.resize(arraySize);
 		endTime = MPI_Wtime();
-		print(pointsArray, "Parallel: after sorting: ");
-		parallelTime = endTime - startTime;
-		cout << "Parallel time = " << parallelTime << endl;
+		cout << "Parallel time = " << endTime - startTime << endl;
 	}
+    if (!checkCorrectness(partArray)) {
+        cout << "Parallel: incorrect results" << endl;
+    }
+    print(partArray, "After sorting: ");
 }
 
 int main(int argc, char* argv[]) {
@@ -224,25 +229,16 @@ int main(int argc, char* argv[]) {
 
 	int n1 = atoi(argv[1]);
     int n2 = atoi(argv[2]);
-    vector<Point> pointsArray, copyPointsArray;
+
     if (procRank == 0) {
-        pointsArray = generatePoints(n1, n2);
+        cout << "n1 = " << n1 << ", n2 = " << n2 << ", proc number = " << procSize << endl;
     }
 
 	if (procSize == 1) {
+        vector<Point> pointsArray = generatePoints(n1, n2, 0, n1 * n2);
 	    runSort(pointsArray);
 	} else {
-	    if (procRank == 0) {
-            std::copy(pointsArray.begin(), pointsArray.end(), std::back_inserter(copyPointsArray));
-	    }
-
-		runSortParallel(pointsArray, n1 * n2);
-        if (procRank == 0) {
-            print(copyPointsArray, "Before sorting: ");
-            runSort(copyPointsArray);
-            double effectiveness = serialTime / parallelTime / procSize;
-            cout << "Effectiveness: " << effectiveness << endl;
-        }
+		runSortParallel(n1, n2);
 	}
 	MPI_Finalize();
 	return 0;

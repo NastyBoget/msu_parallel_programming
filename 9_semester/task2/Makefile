@@ -1,6 +1,6 @@
 SRC=task2.cpp
-CXX=mpic++
-CXX_FLAGS=-std=c++11 -Wall -O2
+CXX=mpicxx
+CXX_FLAGS=-O3
 OUT=sort
 
 
