@@ -5,12 +5,16 @@
 #include <cmath>
 #include "mpi.h"
 
+#define LOOPS 5
+
 using namespace std;
 
 int procSize, procRank;
 bool verbose = false;
 int coordSorted = 0;
 MPI_Datatype messageType;
+double maxTime;
+double sumTime = 0;
 
 struct Point {
     float coord[2];
@@ -191,7 +195,7 @@ void runSort(vector<Point>& pointsArray) {
 		cout << "Serial: incorrect results" << endl;
 	} 	
 	print(pointsArray, "Serial: array after sorting: ");
-	cout << "Serial time = " << endTime - startTime << endl;
+	maxTime = endTime - startTime;
 }
 
 void runSortParallel(int n1, int n2) {
@@ -201,21 +205,17 @@ void runSortParallel(int n1, int n2) {
     vector<Point> partArray = generatePoints(n1, n2, procRank * partArraySize, partArraySize);
     print(partArray, "Before sorting: ");
     buildDerivedType(partArray, &messageType);
-	double startTime = 0.0, endTime;
 
-	MPI_Barrier(MPI_COMM_WORLD);
-    if (procRank == 0) {
-        startTime = MPI_Wtime();
-    }
+	double startTime, endTime;
+	startTime = MPI_Wtime();
 
     sort(partArray.begin(), partArray.end(), comp);
     bSortParallel(partArray);
 
-    MPI_Barrier(MPI_COMM_WORLD);
-	if (procRank == 0) {
-		endTime = MPI_Wtime();
-		cout << "Parallel time = " << endTime - startTime << endl;
-	}
+    endTime = MPI_Wtime();
+    double delta = endTime - startTime;
+    MPI_Reduce(&delta, &maxTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
     if (!checkCorrectness(partArray)) {
         cout << "Parallel: incorrect results" << endl;
     }
@@ -231,15 +231,24 @@ int main(int argc, char* argv[]) {
     int n2 = atoi(argv[2]);
 
     if (procRank == 0) {
-        cout << "n1 = " << n1 << ", n2 = " << n2 << ", proc number = " << procSize << endl;
+        cout << n1 << " " << n2 << " " << procSize << endl;
     }
 
-	if (procSize == 1) {
-        vector<Point> pointsArray = generatePoints(n1, n2, 0, n1 * n2);
-	    runSort(pointsArray);
-	} else {
-		runSortParallel(n1, n2);
-	}
+    for(int loop = 0; loop < LOOPS; loop++) {
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (procSize == 1) {
+            vector<Point> pointsArray = generatePoints(n1, n2, 0, n1 * n2);
+            runSort(pointsArray);
+        } else {
+
+            runSortParallel(n1, n2);
+        }
+        sumTime += maxTime;
+    }
+
+    if (procRank == 0) {
+        cout << sumTime / LOOPS << endl;
+    }
 	MPI_Finalize();
 	return 0;
 }
