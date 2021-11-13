@@ -1,14 +1,14 @@
 SRC=task2.cpp
-CXX=mpicxx
-CXX_FLAGS=-O3
+CXX=mpixlcxx_r
+CXX_FLAGS=-O3 -std=c++11
 OUT=task2
 
 
 build: $(SRC)
 	$(CXX) $(SRC) -o $(OUT) $(CXX_FLAGS)
 
-run-laptop: $(OUT)
-	mpirun -n 4 ./$(OUT) 32 32
+run-single: $(OUT)
+	mpisubmit.bg -n 128 -w 00:10:00 --stdout result\_128\_4096.txt --stderr result\_128\_4096.err ./$(OUT) -- 4096 4096
 
 run-bluegene: $(OUT)
 	for N in 1024 2048 4096 8192; do \

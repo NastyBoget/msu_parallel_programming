@@ -1,5 +1,4 @@
 #include <iostream>
-#include <limits>
 #include <vector>
 #include <functional>
 #include <cmath>
@@ -13,7 +12,6 @@ int procSize, procRank;
 bool verbose = false;
 int coordSorted = 0;
 MPI_Datatype messageType;
-double maxTime;
 double sumTime = 0;
 
 struct Point {
@@ -61,7 +59,7 @@ void print(const vector<Point>& pointsArray, const string& msg) {
             cout << endl;
             fflush(stdout);
         }
-        rank ++;
+        rank++;
         MPI_Barrier(MPI_COMM_WORLD);
     }
     cout << endl;
@@ -74,12 +72,6 @@ bool checkCorrectness(const vector<Point>& pointsArray) {
         }
     }
     return true;
-}
-
-inline void compareExchange(vector<Point>& pointsArray, int i, int j) {
-    if (pointsArray[i].coord[coordSorted] > pointsArray[j].coord[coordSorted]) {
-        std::swap(pointsArray[i].coord[coordSorted], pointsArray[j].coord[coordSorted]);
-    }
 }
 
 void buildDerivedType(vector<Point>& indata, MPI_Datatype* message_type_ptr)
@@ -106,37 +98,27 @@ void buildDerivedType(vector<Point>& indata, MPI_Datatype* message_type_ptr)
     MPI_Type_commit(message_type_ptr);
 }
 
-void oddEvenMergeSort(vector<Point>& left, const vector<Point>& right, int proc1, int proc2) {
+void merge(vector<Point>& left, const vector<Point>& right, int proc1, int proc2) {
     int arraySize = left.size();
-    int tmpSize = 2 * arraySize;
-    vector<Point> tmpArray(tmpSize);
-
-    for(size_t idx = 0; idx < 2; idx++) {
-		for(size_t i = idx, l = idx, r = idx; i < tmpSize; i += 2) {
-			if (l < arraySize and (r >= arraySize or left[l].coord[coordSorted] <= right[r].coord[coordSorted])) {
-				tmpArray[i] = left[l];
-				l += 2;
-			} else {
-				tmpArray[i] = right[r];
-				r += 2;
-			}
-		}
-	}
-	if (arraySize % 2 == 1) {
-	    if (left[arraySize - 1].coord[coordSorted] > right[arraySize - 1].coord[coordSorted]) {
-            tmpArray[tmpSize - 1] = left[arraySize - 1];
-	    } else {
-            tmpArray[tmpSize - 1] = right[arraySize - 1];
-	    }
-	}
-
-	for(int i = 1; i < tmpSize - 1; i += 2) {
-		compareExchange(tmpArray, i, i + 1);
-	}
+    vector<Point> tmpArray(arraySize);
     if (procRank == proc1) {
-        std::copy(tmpArray.begin(), tmpArray.begin() + tmpSize / 2, left.begin());
+        for(int l = 0, r = 0, t = 0; t < arraySize; t++) {
+            if(left[l].coord[coordSorted] < right[r].coord[coordSorted]) {
+                tmpArray[t] = left[l++];
+            } else {
+                tmpArray[t] = right[r++];
+            }
+        }
+        left = tmpArray;
     } else if (procRank == proc2) {
-        std::copy(tmpArray.begin() + tmpSize / 2, tmpArray.end(), left.begin());
+        for(int l = arraySize - 1, r = arraySize - 1, t = arraySize - 1; t >= 0; t--) {
+            if(left[l].coord[coordSorted] > right[r].coord[coordSorted]) {
+                tmpArray[t] = left[l--];
+            } else {
+                tmpArray[t] = right[r--];
+            }
+        }
+        left = tmpArray;
     }
 }
 
@@ -157,7 +139,7 @@ void compareExchangeParallel(vector<Point>& currentArray, int proc1, int proc2) 
 	MPI_Recv(otherArray.data(), arraySize, messageType, otherProc, otherProc, MPI_COMM_WORLD, &status);
 	MPI_Wait(&request, &status);
 
-	oddEvenMergeSort(currentArray, otherArray, proc1, proc2);
+	merge(currentArray, otherArray, proc1, proc2);
 }
 
 void bSortParallel(vector<Point>& pointsArrayPart) {
@@ -195,7 +177,7 @@ void runSort(vector<Point>& pointsArray) {
 		cout << "Serial: incorrect results" << endl;
 	} 	
 	print(pointsArray, "Serial: array after sorting: ");
-	maxTime = endTime - startTime;
+	sumTime += endTime - startTime;
 }
 
 void runSortParallel(int n1, int n2) {
@@ -207,14 +189,18 @@ void runSortParallel(int n1, int n2) {
     buildDerivedType(partArray, &messageType);
 
 	double startTime, endTime;
-	startTime = MPI_Wtime();
+    startTime = MPI_Wtime();
 
     sort(partArray.begin(), partArray.end(), comp);
     bSortParallel(partArray);
 
     endTime = MPI_Wtime();
+    double maxTime;
     double delta = endTime - startTime;
     MPI_Reduce(&delta, &maxTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    if (procRank == 0) {
+        sumTime += maxTime;
+    }
 
     if (!checkCorrectness(partArray)) {
         cout << "Parallel: incorrect results" << endl;
@@ -240,10 +226,8 @@ int main(int argc, char* argv[]) {
             vector<Point> pointsArray = generatePoints(n1, n2, 0, n1 * n2);
             runSort(pointsArray);
         } else {
-
             runSortParallel(n1, n2);
         }
-        sumTime += maxTime;
     }
 
     if (procRank == 0) {
