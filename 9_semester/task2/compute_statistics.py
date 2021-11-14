@@ -1,13 +1,9 @@
-from math import log, ceil
+from math import log, ceil, sqrt
 from typing import List
-
-# time_results = [152.056, 81.7605, 47.428, 28.7055, 17.748, 11.0372, 6.84153, 4.3077, 2.6856]
-# num_processes = [1, 2, 4, 8, 16, 32, 64, 128, 256]
-# n = 8192 * 8192
 
 
 def compute_statistics(time_results: List[float], num_processes: List[int], n: int):
-    print("==============={}===============".format(n, n))
+    print("==============={}^2={}===============".format(int(sqrt(n)), n))
     e_max_list = []
     s_p_list = []
     for p in num_processes:
@@ -15,17 +11,16 @@ def compute_statistics(time_results: List[float], num_processes: List[int], n: i
         e_max = 1. / (1. + log(p, n) * (log(p, 2) - 1.) / 2.)
         s_p_list.append(s_p)
         e_max_list.append(e_max)
-    for p, s_p, e_max in zip(num_processes, s_p_list, e_max_list):
-        print("p={} s_p={} s_max={:.3f} e_max={:.3f}".format(p, s_p, e_max * p, e_max))
-
-    print()
 
     t_1 = time_results[0]
-    for p, t, e_max in zip(num_processes, time_results, e_max_list):
+    print("  p          t             s      s_p       s_max          e          e_max       e_max percent")
+    for p, t, s_p, e_max in zip(num_processes, time_results, s_p_list, e_max_list):
         s = t_1 / t
         e = s / p
-        print("p={} t={:.3f} s={:.3f} e={:.3f} e_max percent={:.3f}".format(p, t, s, e, e / e_max))
+        print("\\hline")
+        print("{:3d} & {:10.3f} & {:10.3f} & {:3d} & {:10.3f} & {:10.3f} & {:10.3f} & {:10.3f} \\\\".format(p, t, s, s_p, e_max * p, e, e_max, e / e_max))
 
+    print("\\hline")
     print()
 
 
@@ -34,7 +29,7 @@ if __name__ == "__main__":
     # {n: {num_processes: [time]}}
     result_dict = {}
 
-    with open("results1.txt", "r") as results_file:
+    with open("results.txt", "r") as results_file:
         results = results_file.readlines()
 
     i = 0

@@ -12,6 +12,7 @@ int procSize, procRank;
 bool verbose = false;
 int coordSorted = 0;
 MPI_Datatype messageType;
+double maxTime;
 double sumTime = 0;
 
 struct Point {
@@ -177,7 +178,7 @@ void runSort(vector<Point>& pointsArray) {
 		cout << "Serial: incorrect results" << endl;
 	} 	
 	print(pointsArray, "Serial: array after sorting: ");
-	sumTime += endTime - startTime;
+	maxTime = endTime - startTime;
 }
 
 void runSortParallel(int n1, int n2) {
@@ -189,18 +190,14 @@ void runSortParallel(int n1, int n2) {
     buildDerivedType(partArray, &messageType);
 
 	double startTime, endTime;
-    startTime = MPI_Wtime();
+	startTime = MPI_Wtime();
 
     sort(partArray.begin(), partArray.end(), comp);
     bSortParallel(partArray);
 
     endTime = MPI_Wtime();
-    double maxTime;
     double delta = endTime - startTime;
     MPI_Reduce(&delta, &maxTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    if (procRank == 0) {
-        sumTime += maxTime;
-    }
 
     if (!checkCorrectness(partArray)) {
         cout << "Parallel: incorrect results" << endl;
@@ -226,8 +223,10 @@ int main(int argc, char* argv[]) {
             vector<Point> pointsArray = generatePoints(n1, n2, 0, n1 * n2);
             runSort(pointsArray);
         } else {
+
             runSortParallel(n1, n2);
         }
+        sumTime += maxTime;
     }
 
     if (procRank == 0) {
