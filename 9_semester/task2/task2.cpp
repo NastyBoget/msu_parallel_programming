@@ -66,13 +66,32 @@ void print(const vector<Point>& pointsArray, const string& msg) {
     cout << endl;
 }
 
-bool checkCorrectness(const vector<Point>& pointsArray) {
+bool checkCorrectnessInsideProcess(const vector<Point>& pointsArray) {
     for(int i = 0; i < pointsArray.size() - 1; i++) {
         if (pointsArray[i].coord[coordSorted] > pointsArray[i + 1].coord[coordSorted]) {
             return false;
         }
     }
     return true;
+}
+
+bool checkCorrectnessBetweenProcesses(const std::vector<Point>& array) {
+    float left;
+    MPI_Status status;
+    MPI_Request request;
+    if (procRank < procSize - 1) {
+        MPI_Isend(&array.back().coord[coordSorted], 1, MPI_FLOAT, procRank + 1, 1,
+                MPI_COMM_WORLD, &request);
+    }
+    if (procRank > 0) {
+        MPI_Recv(&left, 1, MPI_FLOAT, procRank - 1, 1, MPI_COMM_WORLD, &status);
+        if (left > array.front().coord[coordSorted]) return false;
+    }
+    return true;
+}
+
+bool checkCorrectness(const vector<Point>& pointsArray) {
+    return checkCorrectnessInsideProcess(pointsArray) and checkCorrectnessBetweenProcesses(pointsArray);
 }
 
 void buildDerivedType(vector<Point>& indata, MPI_Datatype* message_type_ptr)
