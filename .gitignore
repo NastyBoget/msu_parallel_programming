@@ -3,3 +3,4 @@
 *.out
 *cmake-build-debug*
 *venv*
+*.ipynb_checkpoints*
