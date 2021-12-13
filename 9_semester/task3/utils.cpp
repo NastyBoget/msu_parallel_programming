@@ -6,11 +6,11 @@
 
 
 float x(int i, int j) {
-    return (sin(i) + cos(j)) * (i + j);
+    return 10 * i;
 }
 
 float y(int i, int j) {
-    return (cos(i) - sin(j) + 10) * (i + j);
+    return 10 * j;
 }
 
 vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, int procSize) {
@@ -78,7 +78,7 @@ void printResults(const vector<Point> &partArray, const vector<int> &domains, co
                 if(partArray[i].index == -1)
                     continue;
                 out << partArray[i].index / n2 << " " << partArray[i].index % n2 << " ";
-                out << partArray[i].coord[0] << " " << partArray[i].coord[1] << " " << domains[i] << endl;  // TODO
+                out << partArray[i].coord[0] << " " << partArray[i].coord[1] << " " << domains[i] << endl;
             }
             out.close();
         }

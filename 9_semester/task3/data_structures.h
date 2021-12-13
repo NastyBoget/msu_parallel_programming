@@ -13,8 +13,6 @@ struct Point {
     int index;
 };
 
-float x(int i, int j);
-float y(int i, int j);
 bool comp(Point i, Point j);
 void runSortParallel(vector<Point>& partArray, MPI_Comm comm);
 vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, int procSize);

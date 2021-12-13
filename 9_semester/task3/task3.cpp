@@ -5,7 +5,10 @@
 
 
 int coordSorted = 0;
+int width; // n2
+int edgesPerProcess = 0;
 MPI_Datatype messageType;
+
 
 void init_values(int k, int n, int& k1, int& k2, int& n1, int& n2) {
     k1 = (k + 1) / 2;
@@ -14,32 +17,14 @@ void init_values(int k, int n, int& k1, int& k2, int& n1, int& n2) {
     n2 = n - n1;
 }
 
-void localBisect(vector<Point> &a, vector<int>& domains, int domainStart, int k, int arrayStart, int n) {
-    if (k == 1) {
-        for(int i = 0; i < n; i++) {
-            domains[arrayStart + i] = domainStart;
-        }
-        return;
+int getGroup(int procRank, int delimiterProcRank) {
+    int color;
+    if (delimiterProcRank == 0) {
+        color = procRank > delimiterProcRank ? 0 : 1;
+    } else {
+        color = procRank >= delimiterProcRank ? 0 : 1;
     }
-
-    coordSorted = coordSorted == 0 ? 1 : 0;  // TODO
-    sort(a.begin() + arrayStart, a.begin() + n, comp);
-
-    int k1, k2, n1, n2;
-    init_values(k, n, k1, k2, n1, n2);
-
-    localBisect(a, domains, domainStart, k1, arrayStart, n1);
-    localBisect(a, domains, domainStart + k1, k2, arrayStart + n1, n2);
-}
-
-void removeFictive(vector<Point>& array) {
-    vector<Point> newArray;
-    for(auto & i : array) {
-        if (i.index == -1)
-            continue;
-        newArray.push_back(i);
-    }
-    array = newArray;
+    return color;
 }
 
 vector<Point> getElemsToSend(vector<Point>::iterator arrayIt, int elemsNumber, int procSize) {
@@ -60,6 +45,156 @@ vector<Point> getElemsToSend(vector<Point>::iterator arrayIt, int elemsNumber, i
         newArray[i].coord[1] = FLT_MAX;
     }
     return newArray;
+}
+
+void elemRedistribution(ompi_communicator_t *comm, int procRank, int procSize, int delimiterProcRank,
+                        int delimiterPartArray, vector<Point>& array, int& partArraySize, int& elemsRightAdded) {
+    MPI_Status status;
+    if (delimiterProcRank == 0) {
+        int elemToSendSize = ceil((partArraySize - delimiterPartArray) / (double) procSize);
+        if (procRank == delimiterProcRank) {
+            vector<Point> elemsToSend = getElemsToSend(array.begin() + delimiterPartArray,
+                                                       partArraySize - delimiterPartArray,procSize - 1);
+            elemsRightAdded = elemToSendSize;
+            for(int i = 1, j = 0; i < procSize; i++, j++)
+                MPI_Send(elemsToSend.data() + j * elemToSendSize, elemToSendSize, messageType, i, 0, comm);
+        } else {
+            array.resize(partArraySize + elemToSendSize);
+            MPI_Recv(array.data() + partArraySize, elemToSendSize, messageType, delimiterProcRank, 0, comm, &status);
+            partArraySize += elemToSendSize;
+        }
+        return;
+    }
+    // delimiterProcRank > 0
+    if (procRank <= delimiterProcRank) {
+        int elemToSendSize = ceil(delimiterPartArray / (double) delimiterProcRank);
+        if (procRank == delimiterProcRank) {
+            vector<Point> elemsToSend = getElemsToSend(array.begin(), delimiterPartArray, delimiterProcRank);
+            for(int i = 0; i < delimiterProcRank; i++)
+                MPI_Send(elemsToSend.data() + i * elemToSendSize, elemToSendSize, messageType, i, 0, comm);
+        } else {
+            array.resize(partArraySize + elemToSendSize);
+            MPI_Recv(array.data() + partArraySize, elemToSendSize, messageType, delimiterProcRank, 0, comm, &status);
+            partArraySize += elemToSendSize;
+        }
+    }
+}
+
+int countEdges(vector<Point> &array, int arrayStart, int n, int n1) {
+    int result = 0;
+    for (int i = arrayStart; i < arrayStart + n1; i++) {
+        for (int j = arrayStart + n1; j < arrayStart + n; j++) {
+            int i1 = array[i].index / width, j1 = array[i].index % width;
+            int i2 = array[j].index / width, j2 = array[j].index % width;
+            if ((abs(i1 - i2) == 1 and j1 == j2) or (abs(j1 - j2) == 1 and i1 == i2)) {
+                result++;
+            }
+        }
+    }
+    return result;
+}
+
+int countEdgesParallel(int procRank, int procSize, int delimiterProcRank, MPI_Comm comm, vector<Point> &array, int otherArraySize) {
+    int edgesNumberLocal = 0;
+    int group = getGroup(procRank, delimiterProcRank);
+    delimiterProcRank = delimiterProcRank == 0 ? 1 : delimiterProcRank;
+    if (group == 1) {
+        MPI_Status status;
+        vector<Point> otherArray(otherArraySize);
+        for (int otherProcRank = delimiterProcRank; otherProcRank < procSize; otherProcRank++) {
+            MPI_Recv(otherArray.data(), otherArraySize, messageType, otherProcRank, otherProcRank, comm, &status);
+            for (auto& i : array) {
+                for (auto& j : otherArray) {
+                    int i1 = i.index / width, j1 = i.index % width;
+                    int i2 = j.index / width, j2 = j.index % width;
+                    if ((abs(i1 - i2) == 1 and j1 == j2) or (abs(j1 - j2) == 1 and i1 == i2)) {
+                        edgesNumberLocal++;
+                    }
+                }
+            }
+        }
+    } else {
+        MPI_Request request;
+        for (int otherProcRank = delimiterProcRank - 1; otherProcRank >= 0; otherProcRank--) {
+            MPI_Isend(array.data(), array.size(), messageType, otherProcRank, procRank, comm, &request);
+        }
+    }
+    int edgesNumber;
+    MPI_Reduce(&edgesNumberLocal, &edgesNumber, 1, MPI_INT, MPI_SUM, 0, comm);
+    MPI_Bcast(&edgesNumber, 1, MPI_INT, 0, comm);
+    return edgesNumber;
+}
+
+void findBisectCoord(vector<Point> &array, int arrayStart, int n, int n1) {
+    int edges1, edges2;
+    vector<Point> arrayCopy(array);
+    sort(arrayCopy.begin() + arrayStart, arrayCopy.begin() + arrayStart + n, comp);
+    edges1 = countEdges(arrayCopy, arrayStart, n, n1);
+    coordSorted = coordSorted == 0 ? 1 : 0;
+    sort(array.begin() + arrayStart, array.begin() + arrayStart + n, comp);
+    edges2 = countEdges(array, arrayStart, n, n1);
+    if (edges1 < edges2) {
+        array = arrayCopy;
+        edgesPerProcess += edges1;
+    } else {
+        edgesPerProcess += edges2;
+    }
+}
+
+void findBisectCoordParallel(vector<Point> &array,  MPI_Comm comm, int delimiterProcRank, int delimiterPartArray, int& partArraySize) {
+    int procRank, procSize;
+    MPI_Comm_rank(comm, &procRank);
+    MPI_Comm_size(comm, &procSize);
+
+    int edges1, edges2;
+    vector<Point> arrayCopy(array);
+    runSortParallel(arrayCopy, comm);
+    int prevArraySize = partArraySize;
+    int elemsAdded = 0;
+    elemRedistribution(comm, procRank, procSize, delimiterProcRank, delimiterPartArray, arrayCopy, partArraySize, elemsAdded);
+    edges1 = countEdgesParallel(procRank, procSize, delimiterProcRank, comm, array, prevArraySize + elemsAdded);
+    coordSorted = coordSorted == 0 ? 1 : 0;
+    runSortParallel(array, comm);
+    elemsAdded = 0;
+    partArraySize = prevArraySize;
+    elemRedistribution(comm, procRank, procSize, delimiterProcRank, delimiterPartArray, array, partArraySize, elemsAdded);
+    edges2 = countEdgesParallel(procRank, procSize, delimiterProcRank, comm, array, prevArraySize + elemsAdded);
+    if (edges1 < edges2) {
+        array = arrayCopy;
+        if (procRank == 0) {
+            edgesPerProcess += edges1;
+        }
+    } else {
+        if (procRank == 0) {
+            edgesPerProcess += edges2;
+        }
+    }
+}
+
+void localBisect(vector<Point> &array, vector<int>& domains, int domainStart, int k, int arrayStart, int n) {
+    if (k == 1) {
+        for(int i = 0; i < n; i++) {
+            domains[arrayStart + i] = domainStart;
+        }
+        return;
+    }
+    int k1, k2, n1, n2;
+    init_values(k, n, k1, k2, n1, n2);
+
+    findBisectCoord(array, arrayStart, n, n1);
+
+    localBisect(array, domains, domainStart, k1, arrayStart, n1);
+    localBisect(array, domains, domainStart + k1, k2, arrayStart + n1, n2);
+}
+
+void removeFictive(vector<Point>& array) {
+    vector<Point> newArray;
+    for(auto & i : array) {
+        if (i.index == -1)
+            continue;
+        newArray.push_back(i);
+    }
+    array = newArray;
 }
 
 void recursiveBisect(vector<Point>& array, vector<int>& domains, int domainStartValue, int k, int n,
@@ -87,65 +222,21 @@ void recursiveBisect(vector<Point>& array, vector<int>& domains, int domainStart
         return;
     }
 
-    MPI_Status status;
     int k1, k2, n1, n2;
     init_values(k, n, k1, k2, n1, n2);
     int delimiterProcRank = n1 / partArraySize;
     int delimiterPartArray = n1 % partArraySize;
-    int color;
-
-    if (delimiterProcRank == 0) {
-        color = procRank > delimiterProcRank ? 0 : 1;
-    } else {
-        color = procRank >= delimiterProcRank ? 0 : 1;
-    }
-    coordSorted = coordSorted == 0 ? 1 : 0;  // TODO
-    runSortParallel(array, comm);
+    findBisectCoordParallel(array, comm, delimiterProcRank, delimiterPartArray, partArraySize);
     MPI_Comm newComm;
-    MPI_Comm_split(comm, color, procRank, &newComm);
-
-    if (delimiterProcRank == 0) {
-        int elemToSendSize = ceil((partArraySize - delimiterPartArray) / (double) procSize);
-        if (procRank == delimiterProcRank) {
-            vector<Point> elemsToSend = getElemsToSend(array.begin() + delimiterPartArray,
-                    partArraySize - delimiterPartArray,procSize - delimiterProcRank - 1);
-            for(int i = delimiterProcRank + 1, j = 0; i < procSize; i++, j++)
-                MPI_Send(elemsToSend.data() + j * elemToSendSize, elemToSendSize, messageType, i, 0, comm);
-            recursiveBisect(array, domains, domainStartValue, k1, n1, partArraySize, newComm);
-        } else {
-            vector<Point> extendedArray(array);
-            extendedArray.resize(partArraySize + elemToSendSize);
-            MPI_Recv(extendedArray.data() + partArraySize, elemToSendSize, messageType, delimiterProcRank, 0,
-                     comm, &status);
-            array = extendedArray;
-            partArraySize += elemToSendSize;
-            recursiveBisect(array, domains, domainStartValue + k1, k2, n2, partArraySize,
-                            newComm);
-        }
-        return;
-    }
-    // delimiterProcRank > 0
-    if (procRank <= delimiterProcRank) {
-        int elemToSendSize = ceil(delimiterPartArray / (double) delimiterProcRank);
-        if (procRank == delimiterProcRank) {
-            vector<Point> elemsToSend = getElemsToSend(array.begin(), delimiterPartArray, delimiterProcRank);
-            for(int i = 0; i < delimiterProcRank; i++)
-                MPI_Send(elemsToSend.data() + i * elemToSendSize, elemToSendSize, messageType, i, 0, comm);
-        } else {
-            vector<Point> extendedArray(array);
-            extendedArray.resize(partArraySize + elemToSendSize);
-            MPI_Recv(extendedArray.data() + partArraySize, elemToSendSize, messageType, delimiterProcRank, 0,
-                     comm, &status);
-            array = extendedArray;
-            partArraySize += elemToSendSize;
-        }
-    }
-    if (procRank < delimiterProcRank) {
+    int group = getGroup(procRank, delimiterProcRank);
+    MPI_Comm_split(comm, group, procRank, &newComm);
+    if ((delimiterProcRank == 0 and procRank == 0) or procRank < delimiterProcRank) {
         recursiveBisect(array, domains, domainStartValue, k1, n1, partArraySize, newComm);
     } else {
         recursiveBisect(array, domains, domainStartValue + k1, k2, n2, partArraySize, newComm);
     }
 }
+
 
 int main(int argc, char **argv)
 {
@@ -158,6 +249,7 @@ int main(int argc, char **argv)
     int k = atoi(argv[1]);
     int n1 = atoi(argv[2]);
     int n2 = atoi(argv[3]);
+    width = n2;
     int partArraySize = ceil(n1 * n2 / (double) procSize);
 
     vector<Point> array = generatePoints(n1, n2, procRank, partArraySize, procSize);
@@ -169,11 +261,13 @@ int main(int argc, char **argv)
     endTime = MPI_Wtime();
     delta = endTime - startTime;
     MPI_Reduce(&delta, &maxTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    int edgesSum;
+    MPI_Reduce(&edgesPerProcess, &edgesSum, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if (procRank == 0) {
         cout << maxTime << endl;
+        cout << edgesSum << endl;
     }
     printResults(array, domains, "out.txt", n1, n2);
-    // TODO count wedges
     
     MPI_Finalize();
     return 0;

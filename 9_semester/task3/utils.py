@@ -29,12 +29,18 @@ def visualize(file_name: str) -> None:
             for j in range(max_j + 1):
                 if i < max_i:
                     key1, key2 = f"{i} {j}", f"{i + 1} {j}"
+                    if key1 not in graph_dict or key2 not in graph_dict:
+                        print(f"{key1} or {key2} not in graph")
+                        continue
                     if graph_dict[key1][2] == graph_dict[key2][2]:
                         print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}",penwidth=0.5]', file=f)
                     else:
                         print(f'"{key1}" -- "{key2}" [color="{colors[-1]}",penwidth=0.5]', file=f)
                 if j < max_j:
                     key1, key2 = f"{i} {j}", f"{i} {j + 1}"
+                    if key1 not in graph_dict or key2 not in graph_dict:
+                        print(f"{key1} or {key2} not in graph")
+                        continue
                     if graph_dict[key1][2] == graph_dict[key2][2]:
                         print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}",penwidth=0.5]', file=f)
                     else:
