@@ -19,8 +19,10 @@ def visualize(file_name: str) -> None:
 
     with open(f"{file_name}.dot", "w") as f:
         print("graph {", file=f)
+        print("graph [ dpi = 500 ]; ", file=f)
+        print("node [shape=point, height=0.01]", file=f)
         for key, value in graph_dict.items():
-            print(f'"{key}" [pos="{value[0]},{value[1]}!", shape=point, color="{value[2]}"]', file=f)
+            print(f'"{key}" [pos="{value[0]},{value[1]}!", color="{value[2]}"]', file=f)
         max_i = int(max(lines[:, 0]))
         max_j = int(max(lines[:, 1]))
         for i in range(max_i + 1):
@@ -28,17 +30,17 @@ def visualize(file_name: str) -> None:
                 if i < max_i:
                     key1, key2 = f"{i} {j}", f"{i + 1} {j}"
                     if graph_dict[key1][2] == graph_dict[key2][2]:
-                        print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}"]', file=f)
+                        print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}",penwidth=0.5]', file=f)
                     else:
-                        print(f'"{key1}" -- "{key2}" [color="{colors[-1]}"]', file=f)
+                        print(f'"{key1}" -- "{key2}" [color="{colors[-1]}",penwidth=0.5]', file=f)
                 if j < max_j:
                     key1, key2 = f"{i} {j}", f"{i} {j + 1}"
                     if graph_dict[key1][2] == graph_dict[key2][2]:
-                        print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}"]', file=f)
+                        print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}",penwidth=0.5]', file=f)
                     else:
-                        print(f'"{key1}" -- "{key2}" [color="{colors[-1]}"]', file=f)
+                        print(f'"{key1}" -- "{key2}" [color="{colors[-1]}",penwidth=0.5]', file=f)
         print("}", file=f)
-    os.system(f"dot -Kfdp -n -Tpng -O {file_name}.dot")
+    os.system(f"dot -Kneato -n -Tpng -O {file_name}.dot")
     os.system(f"rm -rf {file_name}.dot")
 
 
