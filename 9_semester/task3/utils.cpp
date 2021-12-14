@@ -5,12 +5,26 @@
 #include "data_structures.h"
 
 
-float x(int i, int j) {
-    return 10 * i + 10 * j;
+float x(int i, int j, int n1, int n2) {
+    // net1 return 10 * i;
+    // net2 return 10 * i + 10 * j + i;
+
+    // net3
+    double angle = -i * 2.5 / n1 - M_PI / 4;
+    double r = angle + j / 2.0 / n2;
+    double t = 2.5 * angle * M_PI;
+    return 50 * r * sin(t);
 }
 
-float y(int i, int j) {
-    return 10 * j - 10 * i;
+float y(int i, int j, int n1, int n2) {
+    // net1 return 10 * j;
+    // net2 return 10 * j - 10 * i + j;
+
+    // net3
+    double angle = -i * 2.5 / n1 - M_PI / 4;
+    double r = angle + j / 2.0 / n2;
+    double t = 2.5 * angle * M_PI;
+    return 50 * r * cos(t);
 }
 
 vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, int procSize) {
@@ -27,8 +41,8 @@ vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, in
         int i = index / n2;
         int j = index % n2;
         Point newPoint;
-        newPoint.coord[0] = x(i, j);
-        newPoint.coord[1] = y(i, j);
+        newPoint.coord[0] = x(i, j, n1, n2);
+        newPoint.coord[1] = y(i, j, n1, n2);
         newPoint.index = index;
         result.push_back(newPoint);
     }
