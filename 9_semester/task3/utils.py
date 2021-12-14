@@ -3,6 +3,21 @@ import os
 import seaborn as sns
 
 
+edges_num = 0
+
+
+def print_edges(key1: str, key2: str, graph_dict: dict, f, colors) -> None:
+    global edges_num
+    if key1 not in graph_dict or key2 not in graph_dict:
+        print(f"{key1} or {key2} not in graph")
+        return
+    if graph_dict[key1][2] == graph_dict[key2][2]:
+        print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}",penwidth=0.5]', file=f)
+    else:
+        edges_num += 1
+        print(f'"{key1}" -- "{key2}" [color="{colors[-1]}",penwidth=0.5]', file=f)
+
+
 def visualize(file_name: str) -> None:
     with open(file_name) as f:
         lines = f.readlines()
@@ -29,23 +44,12 @@ def visualize(file_name: str) -> None:
             for j in range(max_j + 1):
                 if i < max_i:
                     key1, key2 = f"{i} {j}", f"{i + 1} {j}"
-                    if key1 not in graph_dict or key2 not in graph_dict:
-                        print(f"{key1} or {key2} not in graph")
-                        continue
-                    if graph_dict[key1][2] == graph_dict[key2][2]:
-                        print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}",penwidth=0.5]', file=f)
-                    else:
-                        print(f'"{key1}" -- "{key2}" [color="{colors[-1]}",penwidth=0.5]', file=f)
+                    print_edges(key1, key2, graph_dict, f, colors)
                 if j < max_j:
                     key1, key2 = f"{i} {j}", f"{i} {j + 1}"
-                    if key1 not in graph_dict or key2 not in graph_dict:
-                        print(f"{key1} or {key2} not in graph")
-                        continue
-                    if graph_dict[key1][2] == graph_dict[key2][2]:
-                        print(f'"{key1}" -- "{key2}" [color="{graph_dict[key1][2]}",penwidth=0.5]', file=f)
-                    else:
-                        print(f'"{key1}" -- "{key2}" [color="{colors[-1]}",penwidth=0.5]', file=f)
+                    print_edges(key1, key2, graph_dict, f, colors)
         print("}", file=f)
+    print(f"Number of edges: {edges_num}")
     os.system(f"dot -Kneato -n -Tpng -O {file_name}.dot")
     os.system(f"rm -rf {file_name}.dot")
 

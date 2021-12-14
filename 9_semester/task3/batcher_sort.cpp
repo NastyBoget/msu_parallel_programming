@@ -3,40 +3,37 @@
 
 
 bool comp(Point i, Point j) {
-    return i.coord[coordSorted] < j.coord[coordSorted];
-}
-
-void merge(vector<Point>& array1, const vector<Point>& array2, int proc1, int proc2, int procRank) {
-    int arraySize = array1.size();
-    vector<Point> tmpArray(2 * arraySize);
-    vector<Point> left, right;
-    if (proc1 == procRank) {
-        left = array1;
-        right = array2;
+    if (i.coord[coordSorted] < j.coord[coordSorted]) {
+        return true;
     } else {
-        left = array2;
-        right = array1;
-    }
-    for (int i = 0, l = 0, r = 0; i < 2 * arraySize;i++) {
-        if (l >= arraySize) {
-            tmpArray[i] = right[r++];
-        } else {
-            if (r >= arraySize) {
-                tmpArray[i] = left[l++];
-            } else {
-                if (comp(left[l], right[r])) {
-                    tmpArray[i] = left[l++];
-                } else {
-                    tmpArray[i] = right[r++];
-                }
-            }
+        if (i.coord[coordSorted] > j.coord[coordSorted]) {
+            return false;
         }
     }
+    return i.coord[1 - coordSorted] < j.coord[1 - coordSorted];
+}
 
+void merge(vector<Point>& currentArray, const vector<Point>& otherArray, int proc1, int proc2, int procRank) {
+    int arraySize = currentArray.size();
+    vector<Point> tmpArray(arraySize);
     if (procRank == proc1) {
-        array1.assign(tmpArray.begin(), tmpArray.begin() + arraySize);
-    } else {
-        array1.assign(tmpArray.begin() + arraySize, tmpArray.end());
+        for(int l = 0, r = 0, t = 0; t < arraySize; t++) {
+            if(currentArray[l].coord[coordSorted] < otherArray[r].coord[coordSorted]) {
+                tmpArray[t] = currentArray[l++];
+            } else {
+                tmpArray[t] = otherArray[r++];
+            }
+        }
+        currentArray = tmpArray;
+    } else if (procRank == proc2) {
+        for(int l = arraySize - 1, r = arraySize - 1, t = arraySize - 1; t >= 0; t--) {
+            if(currentArray[l].coord[coordSorted] > otherArray[r].coord[coordSorted]) {
+                tmpArray[t] = currentArray[l--];
+            } else {
+                tmpArray[t] = otherArray[r--];
+            }
+        }
+        currentArray = tmpArray;
     }
 }
 

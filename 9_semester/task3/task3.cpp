@@ -47,21 +47,20 @@ vector<Point> getElemsToSend(vector<Point>::iterator arrayIt, int elemsNumber, i
     return newArray;
 }
 
-void elemRedistribution(ompi_communicator_t *comm, int procRank, int procSize, int delimiterProcRank,
-                        int delimiterPartArray, vector<Point>& array, int& partArraySize, int& elemsRightAdded) {
+void elemRedistribution(MPI_Comm comm, int procRank, int procSize, int delimiterProcRank,
+                        int delimiterPartArray, vector<Point>& array, int& elemsRightAdded) {
     MPI_Status status;
+    int partArraySize = array.size();
     if (delimiterProcRank == 0) {
-        int elemToSendSize = ceil((partArraySize - delimiterPartArray) / (double) procSize);
+        int elemToSendSize = ceil((partArraySize - delimiterPartArray) / (double) (procSize - 1));
         if (procRank == delimiterProcRank) {
-            vector<Point> elemsToSend = getElemsToSend(array.begin() + delimiterPartArray,
-                                                       partArraySize - delimiterPartArray,procSize - 1);
+            vector<Point> elemsToSend = getElemsToSend(array.begin() + delimiterPartArray, partArraySize - delimiterPartArray,procSize - 1);
             elemsRightAdded = elemToSendSize;
             for(int i = 1, j = 0; i < procSize; i++, j++)
-                MPI_Send(elemsToSend.data() + j * elemToSendSize, elemToSendSize, messageType, i, 0, comm);
+                MPI_Send(elemsToSend.data() + j * elemToSendSize, elemToSendSize, messageType, i, i, comm);
         } else {
             array.resize(partArraySize + elemToSendSize);
-            MPI_Recv(array.data() + partArraySize, elemToSendSize, messageType, delimiterProcRank, 0, comm, &status);
-            partArraySize += elemToSendSize;
+            MPI_Recv(array.data() + partArraySize, elemToSendSize, messageType, delimiterProcRank, procRank, comm, &status);
         }
         return;
     }
@@ -71,11 +70,10 @@ void elemRedistribution(ompi_communicator_t *comm, int procRank, int procSize, i
         if (procRank == delimiterProcRank) {
             vector<Point> elemsToSend = getElemsToSend(array.begin(), delimiterPartArray, delimiterProcRank);
             for(int i = 0; i < delimiterProcRank; i++)
-                MPI_Send(elemsToSend.data() + i * elemToSendSize, elemToSendSize, messageType, i, 0, comm);
+                MPI_Send(elemsToSend.data() + i * elemToSendSize, elemToSendSize, messageType, i, i, comm);
         } else {
             array.resize(partArraySize + elemToSendSize);
-            MPI_Recv(array.data() + partArraySize, elemToSendSize, messageType, delimiterProcRank, 0, comm, &status);
-            partArraySize += elemToSendSize;
+            MPI_Recv(array.data() + partArraySize, elemToSendSize, messageType, delimiterProcRank, procRank, comm, &status);
         }
     }
 }
@@ -84,9 +82,12 @@ int countEdges(vector<Point> &array, int arrayStart, int n, int n1) {
     int result = 0;
     for (int i = arrayStart; i < arrayStart + n1; i++) {
         for (int j = arrayStart + n1; j < arrayStart + n; j++) {
+            if (array[i].index == -1 or array[j].index == -1) {
+                continue;
+            }
             int i1 = array[i].index / width, j1 = array[i].index % width;
             int i2 = array[j].index / width, j2 = array[j].index % width;
-            if ((abs(i1 - i2) == 1 and j1 == j2) or (abs(j1 - j2) == 1 and i1 == i2)) {
+            if (abs(i1 - i2) + abs(j1 - j2) == 1) {
                 result++;
             }
         }
@@ -105,9 +106,12 @@ int countEdgesParallel(int procRank, int procSize, int delimiterProcRank, MPI_Co
             MPI_Recv(otherArray.data(), otherArraySize, messageType, otherProcRank, otherProcRank, comm, &status);
             for (auto& i : array) {
                 for (auto& j : otherArray) {
+                    if (i.index == -1 or j.index == -1) {
+                        continue;
+                    }
                     int i1 = i.index / width, j1 = i.index % width;
                     int i2 = j.index / width, j2 = j.index % width;
-                    if ((abs(i1 - i2) == 1 and j1 == j2) or (abs(j1 - j2) == 1 and i1 == i2)) {
+                    if (abs(i1 - i2) + abs(j1 - j2) == 1) {
                         edgesNumberLocal++;
                     }
                 }
@@ -130,7 +134,7 @@ void findBisectCoord(vector<Point> &array, int arrayStart, int n, int n1) {
     vector<Point> arrayCopy(array);
     sort(arrayCopy.begin() + arrayStart, arrayCopy.begin() + arrayStart + n, comp);
     edges1 = countEdges(arrayCopy, arrayStart, n, n1);
-    coordSorted = coordSorted == 0 ? 1 : 0;
+    coordSorted = 1 - coordSorted;
     sort(array.begin() + arrayStart, array.begin() + arrayStart + n, comp);
     edges2 = countEdges(array, arrayStart, n, n1);
     if (edges1 < edges2) {
@@ -141,7 +145,7 @@ void findBisectCoord(vector<Point> &array, int arrayStart, int n, int n1) {
     }
 }
 
-void findBisectCoordParallel(vector<Point> &array,  MPI_Comm comm, int delimiterProcRank, int delimiterPartArray, int& partArraySize) {
+void findBisectCoordParallel(vector<Point> &array,  MPI_Comm comm, int delimiterProcRank, int delimiterPartArray) {
     int procRank, procSize;
     MPI_Comm_rank(comm, &procRank);
     MPI_Comm_size(comm, &procSize);
@@ -149,15 +153,14 @@ void findBisectCoordParallel(vector<Point> &array,  MPI_Comm comm, int delimiter
     int edges1, edges2;
     vector<Point> arrayCopy(array);
     runSortParallel(arrayCopy, comm);
-    int prevArraySize = partArraySize;
+    int prevArraySize = array.size();
     int elemsAdded = 0;
-    elemRedistribution(comm, procRank, procSize, delimiterProcRank, delimiterPartArray, arrayCopy, partArraySize, elemsAdded);
-    edges1 = countEdgesParallel(procRank, procSize, delimiterProcRank, comm, array, prevArraySize + elemsAdded);
-    coordSorted = coordSorted == 0 ? 1 : 0;
+    elemRedistribution(comm, procRank, procSize, delimiterProcRank, delimiterPartArray, arrayCopy, elemsAdded);
+    edges1 = countEdgesParallel(procRank, procSize, delimiterProcRank, comm, arrayCopy, prevArraySize + elemsAdded);
+    coordSorted = 1 - coordSorted;
     runSortParallel(array, comm);
     elemsAdded = 0;
-    partArraySize = prevArraySize;
-    elemRedistribution(comm, procRank, procSize, delimiterProcRank, delimiterPartArray, array, partArraySize, elemsAdded);
+    elemRedistribution(comm, procRank, procSize, delimiterProcRank, delimiterPartArray, array, elemsAdded);
     edges2 = countEdgesParallel(procRank, procSize, delimiterProcRank, comm, array, prevArraySize + elemsAdded);
     if (edges1 < edges2) {
         array = arrayCopy;
@@ -180,7 +183,6 @@ void localBisect(vector<Point> &array, vector<int>& domains, int domainStart, in
     }
     int k1, k2, n1, n2;
     init_values(k, n, k1, k2, n1, n2);
-
     findBisectCoord(array, arrayStart, n, n1);
 
     localBisect(array, domains, domainStart, k1, arrayStart, n1);
@@ -197,8 +199,7 @@ void removeFictive(vector<Point>& array) {
     array = newArray;
 }
 
-void recursiveBisect(vector<Point>& array, vector<int>& domains, int domainStartValue, int k, int n,
-                     int& partArraySize, MPI_Comm comm) {
+void recursiveBisect(vector<Point>& array, vector<int>& domains, int domainStartValue, int k, int n, MPI_Comm comm) {
     int procRank, procSize;
     MPI_Comm_rank(comm, &procRank);
     MPI_Comm_size(comm, &procSize);
@@ -209,7 +210,6 @@ void recursiveBisect(vector<Point>& array, vector<int>& domains, int domainStart
         int arraySize = array.size();
         domains.resize(arraySize);
         localBisect(array, domains, domainStartValue, k, 0, arraySize);
-        partArraySize = arraySize;
         return;
     }
     if (k == 1) {
@@ -218,28 +218,26 @@ void recursiveBisect(vector<Point>& array, vector<int>& domains, int domainStart
         domains.resize(arraySize);
         for(int i = 0; i < arraySize; i++)
             domains[i] = domainStartValue;
-        partArraySize = arraySize;
         return;
     }
 
     int k1, k2, n1, n2;
     init_values(k, n, k1, k2, n1, n2);
-    int delimiterProcRank = n1 / partArraySize;
-    int delimiterPartArray = n1 % partArraySize;
-    findBisectCoordParallel(array, comm, delimiterProcRank, delimiterPartArray, partArraySize);
+    int delimiterProcRank = n1 / array.size();
+    int delimiterPartArray = n1 % array.size();
+    findBisectCoordParallel(array, comm, delimiterProcRank, delimiterPartArray);
     MPI_Comm newComm;
     int group = getGroup(procRank, delimiterProcRank);
     MPI_Comm_split(comm, group, procRank, &newComm);
     if ((delimiterProcRank == 0 and procRank == 0) or procRank < delimiterProcRank) {
-        recursiveBisect(array, domains, domainStartValue, k1, n1, partArraySize, newComm);
+        recursiveBisect(array, domains, domainStartValue, k1, n1, newComm);
     } else {
-        recursiveBisect(array, domains, domainStartValue + k1, k2, n2, partArraySize, newComm);
+        recursiveBisect(array, domains, domainStartValue + k1, k2, n2, newComm);
     }
 }
 
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     int procRank, procSize;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &procRank);
@@ -257,7 +255,7 @@ int main(int argc, char **argv)
 
     double startTime, endTime, maxTime, delta;
     startTime = MPI_Wtime();
-    recursiveBisect(array, domains, 0, k, n1 * n2, partArraySize, MPI_COMM_WORLD);
+    recursiveBisect(array, domains, 0, k, n1 * n2, MPI_COMM_WORLD);
     endTime = MPI_Wtime();
     delta = endTime - startTime;
     MPI_Reduce(&delta, &maxTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
@@ -268,7 +266,6 @@ int main(int argc, char **argv)
         cout << edgesSum << endl;
     }
     printResults(array, domains, "out.txt", n1, n2);
-    
     MPI_Finalize();
     return 0;
 }

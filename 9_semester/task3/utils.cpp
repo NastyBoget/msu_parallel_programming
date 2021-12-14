@@ -6,11 +6,11 @@
 
 
 float x(int i, int j) {
-    return 10 * i;
+    return 10 * i + 10 * j;
 }
 
 float y(int i, int j) {
-    return 10 * j;
+    return 10 * j - 10 * i;
 }
 
 vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, int procSize) {
@@ -21,10 +21,9 @@ vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, in
     int nonFictiveElemNumber = procRank < procNumberWithoutFElem ? partArraySize : minPartArraySize;
     int startIndex = procRank < procNumberWithoutFElem ? procRank * partArraySize :
             procNumberWithoutFElem * partArraySize + (procRank - procNumberWithoutFElem) * nonFictiveElemNumber;
-
     vector<Point> result;
     result.reserve(partArraySize);
-    for(int index = startIndex;index < startIndex + partArraySize - procNumberWithoutFElem; index++) {
+    for(int index = startIndex; index < startIndex + nonFictiveElemNumber; index++) {
         int i = index / n2;
         int j = index % n2;
         Point newPoint;
@@ -33,7 +32,7 @@ vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, in
         newPoint.index = index;
         result.push_back(newPoint);
     }
-    if (procNumberWithoutFElem != 0) {
+    for (int index = startIndex + nonFictiveElemNumber; index < startIndex + partArraySize; index++) {
         Point newPoint;
         newPoint.coord[0] = FLT_MAX;
         newPoint.coord[1] = FLT_MAX;
@@ -75,7 +74,7 @@ void printResults(const vector<Point> &partArray, const vector<int> &domains, co
                 out.open(fileName, ios::app);
             }
             for(int i = 0; i < partArray.size(); i++) {
-                if(partArray[i].index == -1)
+                if (partArray[i].index == -1)
                     continue;
                 out << partArray[i].index / n2 << " " << partArray[i].index % n2 << " ";
                 out << partArray[i].coord[0] << " " << partArray[i].coord[1] << " " << domains[i] << endl;
