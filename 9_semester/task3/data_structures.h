@@ -15,9 +15,9 @@ struct Point {
 
 bool comp(Point i, Point j);
 void runSortParallel(vector<Point>& partArray, MPI_Comm comm);
-vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, int procSize);
+vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, int procSize, int netNum);
 void buildDerivedType(MPI_Datatype* message_type_ptr);
-void printResults(const vector<Point> &partArray, const vector<int> &domains, const string &fileName, int n1, int n2);
+void printResults(const vector<Point> &partArray, const vector<int> &domains, const char* fileName, int n1, int n2);
 void print(const vector<Point>& pointsArray);
 
 #endif //TASK3_DATA_STRUCTURES_H

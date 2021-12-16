@@ -5,29 +5,43 @@
 #include "data_structures.h"
 
 
-float x(int i, int j, int n1, int n2) {
-    // net1 return 10 * i;
-    // net2 return 10 * i + 10 * j + i;
-
-    // net3
-    double angle = -i * 2.5 / n1 - M_PI / 4;
-    double r = angle + j / 2.0 / n2;
-    double t = 2.5 * angle * M_PI;
-    return 50 * r * sin(t);
+float x(int i, int j, int n1, int n2, int netNum) {
+    switch (netNum) {
+        case 1:
+            return 10 * i;
+        case 2:
+            return 10 * i + 10 * j + i;
+        case 3:
+            {
+                double angle = -i * 2.5 / n1 - M_PI / 4;
+                double r = angle + j / 2.0 / n2;
+                double t = 2.5 * angle * M_PI;
+                return 50 * r * sin(t);
+            }
+        default:
+            return i;
+    }
 }
 
-float y(int i, int j, int n1, int n2) {
-    // net1 return 10 * j;
-    // net2 return 10 * j - 10 * i + j;
-
-    // net3
-    double angle = -i * 2.5 / n1 - M_PI / 4;
-    double r = angle + j / 2.0 / n2;
-    double t = 2.5 * angle * M_PI;
-    return 50 * r * cos(t);
+float y(int i, int j, int n1, int n2, int netNum) {
+    switch (netNum) {
+        case 1:
+            return 10 * j;
+        case 2:
+            return 10 * j - 10 * i + j;
+        case 3:
+        {
+            double angle = -i * 2.5 / n1 - M_PI / 4;
+            double r = angle + j / 2.0 / n2;
+            double t = 2.5 * angle * M_PI;
+            return 50 * r * cos(t);
+        }
+        default:
+            return j;
+    }
 }
 
-vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, int procSize) {
+vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, int procSize, int netNum) {
     int actualArraySize = n1 * n2;
     int procNumberWithoutFElem = actualArraySize % procSize;
     int minPartArraySize = actualArraySize / procSize;
@@ -41,8 +55,8 @@ vector<Point> generatePoints(int n1, int n2, int procRank, int partArraySize, in
         int i = index / n2;
         int j = index % n2;
         Point newPoint;
-        newPoint.coord[0] = x(i, j, n1, n2);
-        newPoint.coord[1] = y(i, j, n1, n2);
+        newPoint.coord[0] = x(i, j, n1, n2, netNum);
+        newPoint.coord[1] = y(i, j, n1, n2, netNum);
         newPoint.index = index;
         result.push_back(newPoint);
     }
@@ -74,7 +88,7 @@ void buildDerivedType(MPI_Datatype* message_type_ptr) {
     MPI_Type_commit(message_type_ptr);
 }
 
-void printResults(const vector<Point> &partArray, const vector<int> &domains, const string &fileName, int n1, int n2) {
+void printResults(const vector<Point> &partArray, const vector<int> &domains, const char* fileName, int n1, int n2) {
     int procRank, procSize;
     MPI_Comm_rank(MPI_COMM_WORLD, &procRank);
     MPI_Comm_size(MPI_COMM_WORLD, &procSize);

@@ -3,6 +3,7 @@
 #include <cmath>
 #include "data_structures.h"
 
+#define LOOPS 1
 
 int coordSorted = 0;
 int width; // n2
@@ -104,13 +105,13 @@ int countEdgesParallel(int procRank, int procSize, int delimiterProcRank, MPI_Co
         vector<Point> otherArray(otherArraySize);
         for (int otherProcRank = delimiterProcRank; otherProcRank < procSize; otherProcRank++) {
             MPI_Recv(otherArray.data(), otherArraySize, messageType, otherProcRank, otherProcRank, comm, &status);
-            for (auto& i : array) {
-                for (auto& j : otherArray) {
-                    if (i.index == -1 or j.index == -1) {
+            for (int i = 0; i < array.size(); i++) {
+                for (int j = 0; j < otherArray.size(); j++) {
+                    if (array[i].index == -1 or otherArray[j].index == -1) {
                         continue;
                     }
-                    int i1 = i.index / width, j1 = i.index % width;
-                    int i2 = j.index / width, j2 = j.index % width;
+                    int i1 = array[i].index / width, j1 = array[i].index % width;
+                    int i2 = otherArray[j].index / width, j2 = otherArray[j].index % width;
                     if (abs(i1 - i2) + abs(j1 - j2) == 1) {
                         edgesNumberLocal++;
                     }
@@ -191,10 +192,10 @@ void localBisect(vector<Point> &array, vector<int>& domains, int domainStart, in
 
 void removeFictive(vector<Point>& array) {
     vector<Point> newArray;
-    for(auto & i : array) {
-        if (i.index == -1)
+    for(int i = 0; i < array.size(); i++) {
+        if (array[i].index == -1)
             continue;
-        newArray.push_back(i);
+        newArray.push_back(array[i]);
     }
     array = newArray;
 }
@@ -247,25 +248,35 @@ int main(int argc, char **argv) {
     int k = atoi(argv[1]);
     int n1 = atoi(argv[2]);
     int n2 = atoi(argv[3]);
+    int netNum = atoi(argv[4]);
+    char* filename = argv[5];
     width = n2;
     int partArraySize = ceil(n1 * n2 / (double) procSize);
-
-    vector<Point> array = generatePoints(n1, n2, procRank, partArraySize, procSize);
+    double sumTime = 0;
+    vector<Point> array;
     vector<int> domains;
 
-    double startTime, endTime, maxTime, delta;
-    startTime = MPI_Wtime();
-    recursiveBisect(array, domains, 0, k, n1 * n2, MPI_COMM_WORLD);
-    endTime = MPI_Wtime();
-    delta = endTime - startTime;
-    MPI_Reduce(&delta, &maxTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    for(int loop = 0; loop < LOOPS; loop++) {
+        array.clear();
+        domains.clear();
+        edgesPerProcess = 0;
+        array = generatePoints(n1, n2, procRank, partArraySize, procSize, netNum);
+        MPI_Barrier(MPI_COMM_WORLD);
+        double startTime, endTime, maxTime, delta;
+        startTime = MPI_Wtime();
+        recursiveBisect(array, domains, 0, k, n1 * n2, MPI_COMM_WORLD);
+        endTime = MPI_Wtime();
+        delta = endTime - startTime;
+        MPI_Reduce(&delta, &maxTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        sumTime += maxTime;
+    }
     int edgesSum;
     MPI_Reduce(&edgesPerProcess, &edgesSum, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if (procRank == 0) {
-        cout << maxTime << endl;
+        cout << sumTime / LOOPS << endl;
         cout << edgesSum << endl;
     }
-    printResults(array, domains, "out.txt", n1, n2);
+    printResults(array, domains, filename, n1, n2);
     MPI_Finalize();
     return 0;
 }
