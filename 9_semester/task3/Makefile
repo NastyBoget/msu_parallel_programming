@@ -7,7 +7,7 @@ build: $(SRC)
 	$(CXX) $(SRC) -o $(OUT) -O3 -std=c++11
 
 run-single: build
-	mpisubmit.bg -n 32 -w 02:00:00 --stdout result\_32\_$$K\_64x64\_net$$NET.txt --stderr result\_32\_$$K\_64x64\_net$$NET.err ./$(OUT) -- $$K 64 64 $$NET result\_32\_$$K\_64x64\_net$$NET\_out.txt
+	mpisubmit.bg -n 8 -w 02:00:00 --stdout result\_8\_$$K\_37x8\_net$$NET.txt --stderr result\_8\_$$K\_37x8\_net$$NET.err ./$(OUT) -- $$K 37 8 $$NET result\_8\_$$K\_37x8\_net$$NET\_out.txt
 
 # make run-bluegene K=16,31,64 NET=1,2
 
