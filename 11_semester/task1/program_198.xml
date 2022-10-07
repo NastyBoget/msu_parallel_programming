@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algo>
+    <params>
+        <param name="N" type="int" value="5"> </param>
+        <param name="M" type="int" value="4"> </param>
+    </params>
+
+    <!--
+    for(i = 2; i <= n+1; ++i)
+        C[i] = C[i - 1] + D[i];
+    -->
+    <block id="0" dims="1">
+        <arg name="i" val="2..N+1"> </arg>
+        <vertex condition="" type="1">
+            <in src="i - 1"> </in>
+            <in src="i"> </in>
+        </vertex>
+    </block>
+
+    <!--
+    for(i = 2; i <= n+1; ++i)
+        for(j = 2; j <= m+1; ++j)
+            B[i][j] = B[i][j - 2] + C[n + 1];
+    -->
+    <block id="1" dims="2">
+        <arg name="i" val="2..N+1"> </arg>
+        <arg name="j" val="2..M+1"> </arg>
+        <vertex condition="" type="1">
+            <in src="i, j - 2"> </in>
+            <in bsrc="0" src="n + 1"> </in>
+        </vertex>
+    </block>
+
+    <!--
+    for(i = 2; i <= n+1; ++i) {
+        A[i][1][1]= C[i];
+        for(j = 2; j <= m+1; ++j) {
+            for(k = 1; k <= n; ++k)
+                A[i][j][k] = A[i][j - 1][k] + A[i][j][k];
+    }
+    -->
+    <block id="2" dims="3">
+        <arg name="i" val="2..N+1"> </arg>
+        <arg name="j" val="1..M+1"> </arg>
+        <arg name="k" val="1..N"> </arg>
+
+        <vertex condition="(j == 1) and (k == 1)" type="1">
+            <in bsrc="0" src="i"> </in>
+        </vertex>
+
+        <vertex condition="(j > 1)" type="1">
+            <in src="i, j - 1, k"> </in>
+            <in src="i, j, k"> </in>
+        </vertex>
+    </block>
+</algo>
