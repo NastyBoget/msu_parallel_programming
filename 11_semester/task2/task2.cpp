@@ -19,9 +19,11 @@ double F(double x, double y, double z) {
 
 
 void fill_array_with_points(double *arr, size_t arr_len) {
-    for (size_t i = 0; i < arr_len; i++) {
+    for (size_t i = 0; i < arr_len * 3; i += 3) {
         // we generate points in the [0, 1] segment
         arr[i] = rand() * 1.0 / RAND_MAX;
+        arr[i + 1] = rand() * 1.0 / RAND_MAX;
+        arr[i + 2] = rand() * 1.0 / RAND_MAX;
     }
 }
 
@@ -35,7 +37,7 @@ int main(int argc, char** argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &proc_size);
 
     // Run program as follows: task2 eps out_file
-    double eps = strtod(argv[1], nullptr);
+    double eps = strtod(argv[1], NULL);
     char* filename = argv[2];
 
     double start_time = MPI_Wtime();
@@ -47,27 +49,23 @@ int main(int argc, char** argv) {
 
     // 0 <= x <= 1; 0 <= y <= 1; 0 <= z <= 1; parallelepiped_volume = (1 - 0) * (1 - 0) * (1 - 0)
     double parallelepiped_volume = 1.0;
-    srand(proc_rank);
+    srand(pow(2, proc_rank));
 
     // this number may be changed
     size_t number_of_generated_points = 1000;
 
-    auto *x_points = new double[number_of_generated_points];
-    auto *y_points = new double[number_of_generated_points];
-    auto *z_points = new double[number_of_generated_points];
+    double *points = new double[3 * number_of_generated_points];
 
-    bool generate_more = true;
+    int generate_more = 1;
     double total_sum = 0;
     size_t total_points = 0;
 
     while (generate_more) {
-        fill_array_with_points(x_points, number_of_generated_points);
-        fill_array_with_points(y_points, number_of_generated_points);
-        fill_array_with_points(z_points, number_of_generated_points);
+        fill_array_with_points(points, number_of_generated_points);
 
         double local_sum = 0;
-        for (size_t i = 0; i < number_of_generated_points; i++) {
-            local_sum += F(x_points[i], y_points[i], z_points[i]);
+        for (size_t i = 0; i < 3 * number_of_generated_points; i += 3) {
+            local_sum += F(points[i], points[i + 1], points[i + 2]);
         }
         double sum = 0;
         MPI_Reduce(&local_sum, &sum, 1, MPI_DOUBLE, MPI_SUM, master_rank, MPI_COMM_WORLD);
@@ -77,15 +75,13 @@ int main(int argc, char** argv) {
             total_sum += sum;
             total_points += number_of_generated_points * proc_size;
             result = parallelepiped_volume * total_sum / total_points;
-            error = abs(actual_result - result);
-            generate_more = error >= eps;
+            error = fabs(actual_result - result);
+            generate_more = error >= eps ? 1 : 0;
         }
-        MPI_Bcast(&generate_more, 1, MPI_CXX_BOOL, master_rank, MPI_COMM_WORLD);
+        MPI_Bcast(&generate_more, 1, MPI_INT, master_rank, MPI_COMM_WORLD);
     }
 
-    delete[] x_points;
-    delete[] y_points;
-    delete[] z_points;
+    delete[] points;
 
     double end_time = MPI_Wtime();
     double delta = end_time - start_time;
@@ -93,7 +89,7 @@ int main(int argc, char** argv) {
     MPI_Reduce(&delta, &max_time, 1, MPI_DOUBLE, MPI_MAX, master_rank, MPI_COMM_WORLD);
 
     if (proc_rank == master_rank) {
-        std::ofstream fout(filename);
+        std::ofstream fout(filename, std::ios_base::app);
         fout << result << " " << error << " " << total_points << " " << max_time << std::endl;
         fout.close();
     }
