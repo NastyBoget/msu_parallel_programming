@@ -55,6 +55,7 @@ def parse_results(results_dir: str) -> dict:
     add_statistics(results)
     return results
 
+
 def visualize(res_dict: dict, out_dir: str, prefix: str) -> None:
     text_dict = {"t": "Время выполнения", "s": "Ускорение"}
     font = {'family': 'normal',
