@@ -1,10 +1,6 @@
-all: task3.cpp
-	mpixlC -O3 -std=c++11 task3.cpp -o task3
+all: main_mpi.cpp
+	mpixlC -O3 -std=c++11 main_mpi.cpp -o task3
 
 # module load SpectrumMPI
 submit-polus:
-	mpixlC -O3 -std=c++11 task3.cpp -o task3
-
-submit-bluegene:
-	mpixlcxx -O3 task3.cpp -o task3
-
+	mpixlC -O3 -std=c++11 main_mpi.cpp -o task3

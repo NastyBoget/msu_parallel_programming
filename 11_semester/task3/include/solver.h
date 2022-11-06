@@ -32,6 +32,12 @@ public:
         delete[] u;
     }
 
+    double LaplaceOperator(const double *func, int i, int j, int k) const {
+        return (func[ind(i - 1, j, k)] - 2 * func[ind(i, j, k)] + func[ind(i + 1, j, k)]) / (g.h_x * g.h_x) +
+               (func[ind(i, j - 1, k)] - 2 * func[ind(i, j, k)] + func[ind(i, j + 1, k)]) / (g.h_y * g.h_y) +
+               (func[ind(i, j, k - 1)] - 2 * func[ind(i, j, k)] + func[ind(i, j, k + 1)]) / (g.h_z * g.h_z);
+    }
+
     void FillBoundaryValues(int uInd, double t) {
         // Variant 3 -> first kind for x, periodic for y, first kind for z
         for (int i = 0; i <= g.N; i++) {
@@ -65,7 +71,7 @@ public:
         for (int i = 1; i < g.N; i++)
             for (int j = 1; j < g.N; j++)
                 for (int k = 1; k < g.N; k++)
-                    u[1][ind(i, j, k)] = u[0][ind(i, j, k)] + g.tau * g.tau / 2 * f.LaplaceOperator(u[0], i, j, k);
+                    u[1][ind(i, j, k)] = u[0][ind(i, j, k)] + g.tau * g.tau / 2 * LaplaceOperator(u[0], i, j, k);
     }
 
     double ComputeLayerError(int uInd, double t) {
@@ -80,7 +86,7 @@ public:
         return error;
     }
 
-    double Solve(int steps) {
+    double Solve(int steps, bool save) {
         // init u_0 and u_1
         InitValues();
 
@@ -92,15 +98,18 @@ public:
                     for (int k = 1; k < g.N; k++)
                         // calculate u_n+1 inside the area
                         u[step % 3][ind(i, j, k)] = 2 * u[(step + 2) % 3][ind(i, j, k)] - u[(step + 1) % 3][ind(i, j, k)] +
-                                                    g.tau * g.tau * f.LaplaceOperator(u[(step + 2) % 3], i, j, k);
+                                                    g.tau * g.tau * LaplaceOperator(u[(step + 2) % 3], i, j, k);
 
             FillBoundaryValues(step % 3, step * g.tau);
         }
 
         double error = ComputeLayerError(steps % 3, steps * g.tau);
-        saver.SaveLayer(u[steps % 3], steps * g.tau, "numerical.json");
-        saver.SaveDifferenceValues(u[steps % 3], steps * g.tau, "difference.json");
-        saver.SaveAnalyticalValues(u[0], steps * g.tau, "analytical.json");
+        if (save) {
+            saver.SaveLayer(u[steps % 3], steps * g.tau, "numerical.json");
+            saver.SaveDifferenceValues(u[steps % 3], steps * g.tau, "difference.json");
+            saver.SaveAnalyticalValues(steps * g.tau, "analytical.json");
+        }
+
         return error;
     }
 

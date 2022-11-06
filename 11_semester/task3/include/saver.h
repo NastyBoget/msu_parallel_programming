@@ -52,24 +52,26 @@ public:
         fout.close();
     }
 
-    void SaveAnalyticalValues(double *u, double t, const char *filename) const {
+    void SaveAnalyticalValues(double t, const char *filename) const {
+        double *u_copy = new double[(g.N + 1) * (g.N + 1) * (g.N + 1)];
         #pragma omp parallel for collapse(3)
         for (int i = 0; i <= g.N; i++)
             for (int j = 0; j <= g.N; j++)
                 for (int k = 0; k <= g.N; k++)
-                    u[ind(i, j, k)] = f.AnalyticalSolution(i * g.h_x, j * g.h_y, k * g.h_z, t);
+                    u_copy[ind(i, j, k)] = f.AnalyticalSolution(i * g.h_x, j * g.h_y, k * g.h_z, t);
 
-        SaveLayer(u, t, filename);
+        SaveLayer(u_copy, t, filename);
     }
 
-    void SaveDifferenceValues(double *u, double t, const char *filename) const {
+    void SaveDifferenceValues(const double *u, double t, const char *filename) const {
+        double *u_copy = new double[(g.N + 1) * (g.N + 1) * (g.N + 1)];
         #pragma omp parallel for collapse(3)
         for (int i = 0; i <= g.N; i++)
             for (int j = 0; j <= g.N; j++)
                 for (int k = 0; k <= g.N; k++)
-                    u[ind(i, j, k)] = fabs(u[ind(i, j, k)] - f.AnalyticalSolution(i * g.h_x, j * g.h_y, k * g.h_z, t));
+                    u_copy[ind(i, j, k)] = fabs(u[ind(i, j, k)] - f.AnalyticalSolution(i * g.h_x, j * g.h_y, k * g.h_z, t));
 
-        SaveLayer(u, t, filename);
+        SaveLayer(u_copy, t, filename);
     }
 };
 
