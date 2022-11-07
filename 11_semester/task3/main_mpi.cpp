@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
 
     if (proc_rank == master_rank) {
         std::ofstream fout(filename, std::ios_base::app);
-        fout << error << " " << max_time << std::endl;
+        fout << N << " " << proc_size << " " << error << " " << max_time << std::endl;
         fout.close();
     }
     MPI_Finalize();

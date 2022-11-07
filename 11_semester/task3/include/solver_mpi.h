@@ -62,7 +62,7 @@ public:
             return u[uInd][ind(i, j, k, b)];
         }
 
-        for (int r_i = 0; r_i < blocksToReceive.size(); i++) {
+        for (int r_i = 0; r_i < blocksToReceive.size(); r_i++) {
             Block otherB = blocksToReceive[r_i].second;
 
             if (i < otherB.x_min or i > otherB.x_max or
@@ -91,9 +91,9 @@ public:
                 for (int k = b.z_min; k <= b.z_max; k++)
                     errorLocal = std::max(errorLocal, fabs(u[uInd][ind(i, j, k, b)] -
                                                            f.AnalyticalSolution(i * g.h_x, j * g.h_y, k * g.h_z, t)));
-        double error;
+        double error = 0;
         MPI_Reduce(&errorLocal, &error, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-        return errorLocal;
+        return error;
     }
 
     void FillBoundaryValues(int uInd, double t, const Block b) {
@@ -230,7 +230,7 @@ public:
         split(0, g.N, 0, g.N, 0, g.N, proc_size, X, blocks);
         Block block = blocks[proc_rank];
 
-        // allocate spase for u
+        // allocate space for u
         u.resize(3);
         for (int i = 0; i < 3; i++)
             u[i].resize(block.size);
