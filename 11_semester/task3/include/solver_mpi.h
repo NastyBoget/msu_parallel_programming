@@ -3,8 +3,8 @@
 
 
 #include <mpi.h>
-#include <iostream>
 #include <vector>
+#include <stdexcept>
 #include "grid.h"
 #include "index.h"
 #include "functions.h"
@@ -32,7 +32,6 @@ public:
     std::vector<double> GetSendData(int uInd, const Block block, const Block otherBlock) const {
         std::vector<double> dataToSend(otherBlock.size);
 
-        #pragma omp parallel for collapse(3)
         for (int i = otherBlock.x_min; i <= otherBlock.x_max; i++)
             for (int j = otherBlock.y_min; j <= otherBlock.y_max; j++)
                 for (int k = otherBlock.z_min; k <= otherBlock.z_max; k++)
@@ -85,7 +84,6 @@ public:
     double ComputeLayerError(int uInd, double t, const Block b) const {
         double errorLocal = 0;
         // maximum difference between values of u analytical and u computed
-        #pragma omp parallel for collapse(3) reduction(max: error)
         for (int i = b.x_min; i <= b.x_max; i++)
             for (int j = b.y_min; j <= b.y_max; j++)
                 for (int k = b.z_min; k <= b.z_max; k++)
@@ -99,42 +97,36 @@ public:
     void FillBoundaryValues(int uInd, double t, const Block b) {
         // Variant 3 -> first kind for x, periodic for y, first kind for z
         if (b.x_min == 0) {
-            #pragma omp parallel for collapse(2)
             for (int i = b.y_min; i <= b.y_max; i++)
                 for (int j = b.z_min; j <= b.z_max; j++)
                     u[uInd][ind(b.x_min, i, j, b)] = 0;
         }
 
         if (b.x_max == g.N) {
-            #pragma omp parallel for collapse(2)
             for (int i = b.y_min; i <= b.y_max; i++)
                 for (int j = b.z_min; j <= b.z_max; j++)
                     u[uInd][ind(b.x_max, i, j, b)] = 0;
         }
 
         if (b.y_min == 0) {
-            #pragma omp parallel for collapse(2)
             for (int i = b.x_min; i <= b.x_max; i++)
                 for (int j = b.z_min; j <= b.z_max; j++)
                     u[uInd][ind(i, b.y_min, j, b)] = f.AnalyticalSolution(i * g.h_x, 0, j * g.h_z, t);
         }
 
         if (b.y_max == g.N) {
-            #pragma omp parallel for collapse(2)
             for (int i = b.x_min; i <= b.x_max; i++)
                 for (int j = b.z_min; j <= b.z_max; j++)
                     u[uInd][ind(i, b.y_max, j, b)] = f.AnalyticalSolution(i * g.h_x, g.L_y, j * g.h_z, t);
         }
 
         if (b.z_min == 0) {
-            #pragma omp parallel for collapse(2)
             for (int i = b.x_min; i <= b.x_max; i++)
                 for (int j = b.y_min; j <= b.y_max; j++)
                     u[uInd][ind(i, j, b.z_min, b)] = 0;
         }
 
         if (b.z_max == g.N) {
-            #pragma omp parallel for collapse(2)
             for (int i = b.x_min; i <= b.x_max; i++)
                 for (int j = b.y_min; j <= b.y_max; j++)
                     u[uInd][ind(i, j, b.z_max, b)] = 0;
@@ -152,7 +144,6 @@ public:
         int z1 = std::max(b.z_min, 1); int z2 = std::min(b.z_max, g.N - 1);
 
         // initial values for inner points in u_0
-        #pragma omp parallel for collapse(3)
         for (int i = x1; i <= x2; i++)
             for (int j = y1; j <= y2; j++)
                 for (int k = z1; k <= z2; k++)
@@ -160,7 +151,6 @@ public:
 
         std::vector< std::vector<double> > recieved = Exchange(0, b);
         // initial values for inner points in u_1
-        #pragma omp parallel for collapse(3)
         for (int i = x1; i <= x2; i++)
             for (int j = y1; j <= y2; j++)
                 for (int k = z1; k <= z2; k++)
@@ -175,7 +165,6 @@ public:
 
         std::vector< std::vector<double> > received = Exchange((step + 2) % 3, b);
         // calculate u_n+1 inside the area
-        #pragma omp parallel for collapse(3)
         for (int i = x1; i <= x2; i++)
             for (int j = y1; j <= y2; j++)
                 for (int k = z1; k <= z2; k++)
@@ -183,6 +172,10 @@ public:
                                                    u[(step + 1) % 3][ind(i, j, k, b)] +
                                                    g.tau * g.tau * LaplaceOperator((step + 2) % 3, i, j, k, b, received);
         FillBoundaryValues(step % 3, step * g.tau, b);
+    }
+
+    bool IsInside(int xmin1, int xmax1, int ymin1, int ymax1, int xmin2, int xmax2, int ymin2, int ymax2) const {
+        return xmin2 <= xmin1 && xmax1 <= xmax2 && ymin2 <= ymin1 && ymax1 <= ymax2;
     }
 
     void GetNeighbours(const std::vector<Block> &blocks) {
@@ -196,8 +189,16 @@ public:
             if (block.x_min == otherBlock.x_max + 1 or otherBlock.x_min == block.x_max + 1) {
                 int xSend = block.x_min == otherBlock.x_max + 1 ? block.x_min : block.x_max;
                 int xRecv = otherBlock.x_min == block.x_max + 1 ? otherBlock.x_min : otherBlock.x_max;
-                int y_min = std::max(block.y_min, otherBlock.y_min); int y_max = std::min(block.y_max, otherBlock.y_max);
-                int z_min = std::max(block.z_min, otherBlock.z_min); int z_max = std::min(block.z_max, otherBlock.z_max);
+                int y_min, y_max, z_min, z_max;
+                if (IsInside(block.y_min, block.y_max, block.z_min, block.z_max,
+                            otherBlock.y_min, otherBlock.y_max, otherBlock.z_min, otherBlock.z_max)) {
+                    y_min = block.y_min; y_max = block.y_max; z_min = block.z_min; z_max = block.z_max;
+                } else if (IsInside(otherBlock.y_min, otherBlock.y_max, otherBlock.z_min, otherBlock.z_max,
+                                    block.y_min, block.y_max, block.z_min, block.z_max)) {
+                    y_min = otherBlock.y_min; y_max = otherBlock.y_max; z_min = otherBlock.z_min; z_max = otherBlock.z_max;
+                } else {
+                    continue;
+                }
                 // add block as a rectangle (it's a border between two processes)
                 blocksToSend.emplace_back(i, Block(xSend, xSend, y_min, y_max, z_min, z_max));
                 blocksToReceive.emplace_back(i, Block(xRecv, xRecv, y_min, y_max, z_min, z_max));
@@ -206,8 +207,16 @@ public:
             if (block.y_min == otherBlock.y_max + 1 or otherBlock.y_min == block.y_max + 1) {
                 int ySend = block.y_min == otherBlock.y_max + 1 ? block.y_min : block.y_max;
                 int yRecv = otherBlock.y_min == block.y_max + 1 ? otherBlock.y_min : otherBlock.y_max;
-                int x_min = std::max(block.x_min, otherBlock.x_min); int x_max = std::min(block.x_max, otherBlock.x_max);
-                int z_min = std::max(block.z_min, otherBlock.z_min); int z_max = std::min(block.z_max, otherBlock.z_max);
+                int x_min, x_max, z_min, z_max;
+                if (IsInside(block.x_min, block.x_max, block.z_min, block.z_max,
+                             otherBlock.x_min, otherBlock.x_max, otherBlock.z_min, otherBlock.z_max)) {
+                    x_min = block.x_min; x_max = block.x_max; z_min = block.z_min; z_max = block.z_max;
+                } else if (IsInside(otherBlock.x_min, otherBlock.x_max, otherBlock.z_min, otherBlock.z_max,
+                                    block.x_min, block.x_max, block.z_min, block.z_max)) {
+                    x_min = otherBlock.x_min; x_max = otherBlock.x_max; z_min = otherBlock.z_min; z_max = otherBlock.z_max;
+                } else {
+                    continue;
+                }
                 blocksToSend.emplace_back(i, Block(x_min, x_max, ySend, ySend, z_min, z_max));
                 blocksToReceive.emplace_back(i, Block(x_min, x_max, yRecv, yRecv, z_min, z_max));
                 continue;
@@ -215,8 +224,16 @@ public:
             if (block.z_min == otherBlock.z_max + 1 or otherBlock.z_min == block.z_max + 1) {
                 int zSend = block.z_min == otherBlock.z_max + 1 ? block.z_min : block.z_max;
                 int zRecv = otherBlock.z_min == block.z_max + 1 ? otherBlock.z_min : otherBlock.z_max;
-                int x_min = std::max(block.x_min, otherBlock.x_min); int x_max = std::min(block.x_max, otherBlock.x_max);
-                int y_min = std::max(block.y_min, otherBlock.y_min); int y_max = std::min(block.y_max, otherBlock.y_max);
+                int x_min, x_max, y_min, y_max;
+                if (IsInside(block.x_min, block.x_max, block.y_min, block.y_max,
+                             otherBlock.x_min, otherBlock.x_max, otherBlock.y_min, otherBlock.y_max)) {
+                    x_min = block.x_min; x_max = block.x_max; y_min = block.y_min; y_max = block.y_max;
+                } else if (IsInside(otherBlock.x_min, otherBlock.x_max, otherBlock.y_min, otherBlock.y_max,
+                                    block.x_min, block.x_max, block.y_min, block.y_max)) {
+                    x_min = otherBlock.x_min; x_max = otherBlock.x_max; y_min = otherBlock.y_min; y_max = otherBlock.y_max;
+                } else {
+                    continue;
+                }
                 blocksToSend.emplace_back(i, Block(x_min, x_max, y_min, y_max, zSend, zSend));
                 blocksToReceive.emplace_back(i, Block(x_min, x_max, y_min, y_max, zRecv, zRecv));
                 continue;
