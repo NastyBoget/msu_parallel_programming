@@ -40,6 +40,7 @@ public:
 
     void FillBoundaryValues(int uInd, double t) {
         // Variant 3 -> first kind for x, periodic for y, first kind for z
+        #pragma omp parallel for collapse(2)
         for (int i = 0; i <= g.N; i++) {
             for (int j = 0; j <= g.N; j++) {
                 // for x

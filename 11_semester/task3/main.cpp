@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <cmath>
 #include "include/solver.h"
@@ -16,13 +17,19 @@ int main(int argc, char** argv) {
     double L = (argc == 4) ? strtod(argv[2], NULL) : M_PI;
     char* filename = (argc == 4) ? argv[3] : argv[2];
 
+    auto start_time = std::chrono::high_resolution_clock::now();
+
     Grid grid = Grid(L, L, L, N, T, K);
     Solver solver = Solver(grid);
     double error = solver.Solve(timeSteps, save);
 
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    double delta = duration.count() / 1000000.0;
+
     std::ofstream fout(filename, std::ios_base::app);
-    fout << "L=" << L << "; N=" << N << "; error=" << error << std::endl;
+    fout << N << " " << 0 << " " << error << " " << delta << std::endl;
     fout.close();
-    std::cout << error << std::endl;
+
     return 0;
 }
