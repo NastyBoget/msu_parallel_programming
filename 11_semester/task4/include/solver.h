@@ -8,15 +8,7 @@
 #include "grid.h"
 #include "splitter.h"
 
-const int num_threads = 4;
-
-
-struct Neighbour {
-    int number;
-    Block send;
-    Block receive;
-    Neighbour(int num, Block b1, Block b2) : number(num), send(b1), receive(b2) {}
-};
+const int num_threads = 128;
 
 
 __device__ double analyticalSolution(double x, double y, double z, double t, double a, const Grid g) {
@@ -47,27 +39,26 @@ thrust::host_vector<double> getSendData(thrust::host_vector<double> &u, const Bl
 }
 
 thrust::host_vector<double> exchange(thrust::host_vector<double> &u, const Block block,
-                                     Block *send, Block *receive, int *numbers, int vsize) {
+                                     thrust::host_vector<Block> &send, thrust::host_vector<Block> &receive,
+                                     thrust::host_vector<int> &numbers) {
     thrust::host_vector<double> dataToReceive;
     int offset = 0;
     thrust::host_vector<MPI_Request> requests(2);
     thrust::host_vector<MPI_Status> statuses(2);
 
-    for (int i = 0; i < vsize; i++) {
-        thrust::host_vector<double> dataToSend = getSendData(u, block, static_cast<Block>(send[i]));
-        dataToReceive.insert(dataToReceive.end(), static_cast<Block>(receive[i]).size, 0);
+    for (int i = 0; i < numbers.size(); i++) {
+        thrust::host_vector<double> dataToSend = getSendData(u, block, send[i]);
+        dataToReceive.insert(dataToReceive.end(), receive[i].size, 0);
 
-        MPI_Isend(dataToSend.data(), static_cast<Block>(send[i]).size, MPI_DOUBLE, numbers[i], 0, MPI_COMM_WORLD, &requests[0]);
-        MPI_Irecv(dataToReceive.data() + offset, static_cast<Block>(receive[i]).size, MPI_DOUBLE, numbers[i], 0, MPI_COMM_WORLD, &requests[1]);
+        MPI_Isend(dataToSend.data(), send[i].size, MPI_DOUBLE, numbers[i], 0, MPI_COMM_WORLD, &requests[0]);
+        MPI_Irecv(dataToReceive.data() + offset, receive[i].size, MPI_DOUBLE, numbers[i], 0, MPI_COMM_WORLD, &requests[1]);
         MPI_Waitall(2, requests.data(), statuses.data());
-        offset += static_cast<Block>(receive[i]).size;
+        offset += receive[i].size;
     }
     return dataToReceive;
 }
 
-__device__ double findU(double *u, int i, int j, int k, const Block b, double *recieved,
-                        Block *send, Block *receive, int *numbers, int vsize) {
-
+__device__ double findU(double *u, int i, int j, int k, const Block b, double *received, Block *receive, int vsize) {
     if (b.x_min <= i and i <= b.x_max and b.y_min <= j and j <= b.y_max and b.z_min <= k and k <= b.z_max) {
         return u[ind(i, j, k, b)];
     }
@@ -81,19 +72,19 @@ __device__ double findU(double *u, int i, int j, int k, const Block b, double *r
             offset += receive[r_i].size;
             continue;
         }
-        return recieved[offset + ind(i, j, k, otherB)];
+        return received[offset + ind(i, j, k, otherB)];
     }
     return 1;
 }
 
 __device__ double laplaceOperator(double *u, int i, int j, int k, const Block b, const Grid g, double *recieved,
-                                  Block *send, Block *receive, int *numbers, int vsize) {
-    double dx = (findU(u, i, j - 1, k, b, recieved, send, receive, numbers, vsize) - 2 * u[ind(i, j, k, b)] +
-            findU(u, i, j + 1, k, b, recieved, send, receive, numbers, vsize)) / (g.h_y * g.h_y);
-    double dy = (findU(u, i - 1, j, k, b, recieved, send, receive, numbers, vsize) - 2 * u[ind(i, j, k, b)] +
-            findU(u, i + 1, j, k, b, recieved, send, receive, numbers, vsize)) / (g.h_x * g.h_x);
-    double dz = (findU(u,i, j, k - 1, b, recieved, send, receive, numbers, vsize) - 2 * u[ind(i, j, k, b)] +
-            findU(u, i, j, k + 1, b, recieved, send, receive, numbers, vsize)) / (g.h_z * g.h_z);
+                                  Block *receive, int vsize) {
+    double dx = (findU(u, i, j - 1, k, b, recieved, receive, vsize) - 2 * u[ind(i, j, k, b)] +
+            findU(u, i, j + 1, k, b,  recieved, receive, vsize)) / (g.h_y * g.h_y);
+    double dy = (findU(u, i - 1, j, k, b,  recieved, receive, vsize) - 2 * u[ind(i, j, k, b)] +
+            findU(u, i + 1, j, k, b,  recieved, receive, vsize)) / (g.h_x * g.h_x);
+    double dz = (findU(u,i, j, k - 1, b,  recieved, receive, vsize) - 2 * u[ind(i, j, k, b)] +
+            findU(u, i, j, k + 1, b,  recieved, receive, vsize)) / (g.h_z * g.h_z);
     return dx + dy + dz;
 }
 
@@ -108,8 +99,7 @@ __global__ void computeLayerErrorKernel(double *u, double t, double a, const Blo
     }
 }
 
-double computeLayerError(thrust::host_vector<double> &u, double t, const Block b, const Grid g, double a) {
-    thrust::device_vector<double> uDevice(u);
+double computeLayerError(thrust::device_vector<double> &uDevice, double t, const Block b, const Grid g, double a) {
     computeLayerErrorKernel<<<1, num_threads>>>(thrust::raw_pointer_cast(&uDevice[0]), t, a, b, g);
     thrust::device_vector<double>::iterator iter = thrust::max_element(uDevice.begin(), uDevice.end());
     double errorLocal = uDevice[iter - uDevice.begin()];
@@ -141,7 +131,7 @@ __global__ void fillFirstKindBoundaryKernel(double *u, const Block b, Axis axis,
 }
 
 __global__ void fillPeriodicBoundaryKernel(double *u, const Block b, const Grid g, double a, double t,
-                                            Axis axis, int i, int v1, int v2, int v1_size, int v2_size) {
+                                           Axis axis, int i, int v1, int v2, int v1_size, int v2_size) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= v1_size * v2_size)
         return;
@@ -162,8 +152,7 @@ __global__ void fillPeriodicBoundaryKernel(double *u, const Block b, const Grid 
     }
 }
 
-void fillBoundaryValues(thrust::host_vector<double> &u, double t, const Block b, const Grid g, double a) {
-    thrust::device_vector<double> uDevice(u);
+void fillBoundaryValues(thrust::device_vector<double> &uDevice, double t, const Block b, const Grid g, double a) {
     // Variant 3 -> first kind for x, periodic for y, first kind for z
     if (b.x_min == 0) {
         fillFirstKindBoundaryKernel<<<((b.y_size * b.z_size + num_threads - 1) / num_threads), num_threads>>>(
@@ -194,7 +183,6 @@ void fillBoundaryValues(thrust::host_vector<double> &u, double t, const Block b,
         fillFirstKindBoundaryKernel<<<((b.x_size * b.y_size + num_threads - 1) / num_threads), num_threads>>>(
                 thrust::raw_pointer_cast(&uDevice[0]), b, Z, g.N, b.x_min, b.y_min, b.x_size, b.y_size);
     }
-    u = uDevice;
 }
 
 
@@ -210,8 +198,7 @@ __global__ void initZeroLayerKernel(double *u0, double a, int size, int x1, int 
     u0[ind(i, j, k, b)] = phi(i * g.h_x, j * g.h_y, k * g.h_z, a, g);
 }
 
-__global__ void initFirstLayerKernel(double *u0, double *u1, double *received,
-                                     Block *send, Block *receive, int *numbers, int vsize,
+__global__ void initFirstLayerKernel(double *u0, double *u1, double *received, Block *receive, int vsize,
                                      int size, int x1, int y1, int z1, int y_size, int z_size, const Grid g, const Block b) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= size)
@@ -222,15 +209,14 @@ __global__ void initFirstLayerKernel(double *u0, double *u1, double *received,
     int k = z1 + index % z_size;
 
     u1[ind(i, j, k, b)] = u0[ind(i, j, k, b)] +
-            g.tau * g.tau / 2 * laplaceOperator(u0, i, j, k, b, g, received, send, receive, numbers, vsize);
+            g.tau * g.tau / 2 * laplaceOperator(u0, i, j, k, b, g, received, receive, vsize);
 }
 
-void initValues(const Block b, const Grid g, double a,
-                thrust::host_vector<double> &u0, thrust::host_vector<double> &u1,
-                Block *send, Block *receive, int *numbers, int vsize) {
+void initValues(const Block b, const Grid g, double a, thrust::device_vector<double> &u0Device, thrust::device_vector<double> &u1Device,
+                thrust::host_vector<Block> &send, thrust::host_vector<Block> &receive, thrust::host_vector<int> &numbers) {
     // boundary (i = 0,N or j = 0,N or k = 0,N)
-    fillBoundaryValues(u0, 0, b, g, a);
-    fillBoundaryValues(u1, g.tau, b, g, a);
+    fillBoundaryValues(u0Device, 0, b, g, a);
+    fillBoundaryValues(u1Device, g.tau, b, g, a);
 
     // compute the boundaries of the current block
     int x1 = std::max(b.x_min, 1); int x2 = std::min(b.x_max, g.N - 1);
@@ -242,23 +228,20 @@ void initValues(const Block b, const Grid g, double a,
     int z_size = z2 - z1 + 1;
     int size = x_size * y_size * z_size;
 
-    thrust::device_vector<double> u0Device(u0);
     initZeroLayerKernel<<<(size + num_threads - 1) / num_threads, num_threads>>>(
             thrust::raw_pointer_cast(&u0Device[0]), a, size, x1, y1, z1, y_size, z_size, g, b);
 
-    u0 = u0Device;
-    thrust::device_vector<double> u1Device(u1);
-    thrust::host_vector<double> received = exchange(u0, b, send, receive, numbers, vsize);
+    thrust::host_vector<double> u0(u0Device);
+    thrust::host_vector<double> received = exchange(u0, b, send, receive, numbers);
     thrust::device_vector<double> receivedDevice(received);
+    thrust::device_vector<Block> receiveDevice(receive);
 
     initFirstLayerKernel<<<(size + num_threads - 1) / num_threads, num_threads>>>(
             thrust::raw_pointer_cast(&u0Device[0]), thrust::raw_pointer_cast(&u1Device[0]), thrust::raw_pointer_cast(&receivedDevice[0]),
-            send, receive, numbers, vsize, size, x1, y1, z1, y_size, z_size, g, b);
-    u1 = u1Device;
+            thrust::raw_pointer_cast(&receiveDevice[0]), receive.size(), size, x1, y1, z1, y_size, z_size, g, b);
 }
 
-__global__ void getNextUKernel(double *u, double *u0, double *u1, double *received,
-                               Block *send, Block *receive, int *numbers, int vsize,
+__global__ void getNextUKernel(double *u, double *u0, double *u1, double *received, Block *receive, int vsize,
                                int size, int x1, int y1, int z1, int y_size, int z_size, const Grid g, const Block b) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= size)
@@ -269,11 +252,11 @@ __global__ void getNextUKernel(double *u, double *u0, double *u1, double *receiv
     int k = z1 + index % z_size;
 
     u[ind(i, j, k, b)] = 2 * u1[ind(i, j, k, b)] - u0[ind(i, j, k, b)] +
-            g.tau * g.tau * laplaceOperator(u1, i, j, k, b, g, received, send, receive, numbers, vsize);
+            g.tau * g.tau * laplaceOperator(u1, i, j, k, b, g, received, receive, vsize);
 }
 
-void getNextU(int step, const Block b, std::vector< thrust::host_vector<double> > &u, const Grid g, double a,
-              Block *send, Block *receive, int *numbers, int vsize) {
+void getNextU(int step, const Block b, std::vector< thrust::device_vector<double> > &u, const Grid g, double a,
+              thrust::host_vector<Block> &send, thrust::host_vector<Block> &receive, thrust::host_vector<int> &numbers) {
     // compute the boundaries of the current block
     int x1 = std::max(b.x_min, 1); int x2 = std::min(b.x_max, g.N - 1);
     int y1 = std::max(b.y_min, 1); int y2 = std::min(b.y_max, g.N - 1);
@@ -284,16 +267,15 @@ void getNextU(int step, const Block b, std::vector< thrust::host_vector<double> 
     int z_size = z2 - z1 + 1;
     int size = x_size * y_size * z_size;
 
-    thrust::host_vector<double> received = exchange(u[(step + 2) % 3], b, send, receive, numbers, vsize);
+    thrust::host_vector<double> uHost(u[(step + 2) % 3]);
+    thrust::host_vector<double> received = exchange(uHost, b, send, receive, numbers);
     thrust::device_vector<double> receivedDevice(received);
-    thrust::device_vector<double> uDevice(u[step % 3]);
-    thrust::device_vector<double> u0(u[(step + 1) % 3]);
-    thrust::device_vector<double> u1(u[(step + 2) % 3]);
+    thrust::device_vector<Block> receiveDevice(receive);
 
     getNextUKernel<<<(size + num_threads - 1) / num_threads, num_threads>>>(
-            thrust::raw_pointer_cast(&uDevice[0]), thrust::raw_pointer_cast(&u0[0]), thrust::raw_pointer_cast(&u1[0]),
-                    thrust::raw_pointer_cast(&receivedDevice[0]), send, receive, numbers, vsize, size, x1, y1, z1, y_size, z_size, g, b);
-    u[step % 3] = uDevice;
+            thrust::raw_pointer_cast(&u[step % 3][0]), thrust::raw_pointer_cast(&u[(step + 1) % 3][0]),
+            thrust::raw_pointer_cast(&u[(step + 2) % 3][0]), thrust::raw_pointer_cast(&receivedDevice[0]),
+            thrust::raw_pointer_cast(&receiveDevice[0]), receive.size(), size, x1, y1, z1, y_size, z_size, g, b);
     fillBoundaryValues(u[step % 3], step * g.tau, b, g, a);
 }
 
@@ -380,7 +362,7 @@ double solve(int steps, Grid g) {
     Block block = blocks[proc_rank];
 
     // allocate space for u
-    std::vector< thrust::host_vector<double> > u(3);
+    std::vector< thrust::device_vector<double> > u(3);
     for (int i = 0; i < 3; i++)
         u[i].resize(block.size);
 
@@ -388,20 +370,13 @@ double solve(int steps, Grid g) {
     thrust::host_vector<Block> blocksToSend, blocksToReceive;
     thrust::host_vector<int> neighboursRanks;
     getNeighbours(blocks, blocksToSend, blocksToReceive, neighboursRanks, proc_rank, proc_size);
-    thrust::device_vector<Block> blocksToSendDevice(blocksToSend);
-    thrust::device_vector<Block> blocksToReceiveDevice(blocksToReceive);
-    thrust::device_vector<int> neighboursRanksDevice(neighboursRanks);
 
     // init u_0 and u_1
-    initValues(block, g, a, u[0], u[1], thrust::raw_pointer_cast(&blocksToSendDevice[0]),
-               thrust::raw_pointer_cast(&blocksToReceiveDevice[0]),
-               thrust::raw_pointer_cast(&neighboursRanksDevice[0]), neighboursRanksDevice.size());
+    initValues(block, g, a, u[0], u[1], blocksToSend, blocksToReceive, neighboursRanks);
 
     // calculate the next time layers for u
     for (int step = 2; step <= steps; step++) {
-        getNextU(step, block, u, g, a, thrust::raw_pointer_cast(&blocksToSendDevice[0]),
-                 thrust::raw_pointer_cast(&blocksToReceiveDevice[0]),
-                 thrust::raw_pointer_cast(&neighboursRanksDevice[0]), neighboursRanksDevice.size());
+        getNextU(step, block, u, g, a,  blocksToSend, blocksToReceive, neighboursRanks);
     }
 
     return computeLayerError(u[steps % 3], steps * g.tau, block, g, a);
