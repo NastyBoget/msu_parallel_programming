@@ -9,7 +9,7 @@ submit-polus:
 		for p in 1 2 4 6 ; do \
 			for i in {1..5} ; do \
 				bsub -n $$p -gpu "num=2" -R "span[ptile=2]" -W 00:10 -o /dev/null -e /dev/null mpiexec ./task4 $$N 1 out\_$$p\_$$N\_1.txt ; \
-                bsub -n $$p -gpu "num=2" -R "span[ptile=2]" -W 00:10 -o /dev/null -e /dev/null mpiexec ./task4 $$N out\_$$p\_$$N\_pi.txt ; \
+				bsub -n $$p -gpu "num=2" -R "span[ptile=2]" -W 00:10 -o /dev/null -e /dev/null mpiexec ./task4 $$N out\_$$p\_$$N\_pi.txt ; \
 			done \
 		done \
 	done
