@@ -96,7 +96,7 @@ int main(int argc, char **argv)
     }
     MPI_Barrier(comm);
     // шаг 4
-    if (coords[0] == 1 && coords[1] == 3) {
+    if (coords[0] == 1 && coords[1] == 2) {
         other_coords[0] = coords[0];
         other_coords[1] = 1;
         MPI_Cart_rank(comm, other_coords, &other_rank);
